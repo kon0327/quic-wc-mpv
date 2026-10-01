@@ -1,0 +1,12 @@
+# Use OpenVLA's evaluation stack, rather than LIBERO's old training stack.
+robosuite==1.4.1
+mujoco==2.3.7
+bddl==1.0.1
+future==0.18.2
+gym==0.25.2
+easydict
+cloudpickle
+imageio[ffmpeg]
+# Snapshot metadata 1.21.0 generates protobuf code incompatible with TF 2.15's protobuf <5.
+tensorflow-metadata==1.17.2
+protobuf==4.21.12

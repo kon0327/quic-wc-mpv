@@ -1,0 +1,11 @@
+{
+  "source_directory": "/home/kony/dissertation/ovlab/deploy/environments/openvla/snapshots/2026-07-17",
+  "sha256": {
+    "environment-replay.yml": "e305e4945f6afef898179b936f9d1dd9e1c84b654a8333ebf89f734669f0bf7d",
+    "environment-portable.yml": "ca5b39c9da57cf22df78f18db103f5557f5bc921f069ab0a7074e3f0e5726f61",
+    "conda-explicit-linux-64.txt": "92fb0a571e0070dd6b023f8e5ad7debed22813ff3aded0db19ffd8e08ba78082",
+    "runtime.txt": "c4b3ea97edab0d57bbea646e112870e1ca5e07717cc9621b75bafb9d51035d9e",
+    "pip-check.txt": "9261363b733079a641c2e4cc9bc46ffa1d8336945a87f807b6cf68847dbc9b09",
+    "test-context.txt": "bb535939c02ee77c8346394036f2a7d62617df4475e4bae135a22f4709b803f2"
+  }
+}

@@ -1,0 +1,163 @@
+{
+  "checks": {
+    "versions": {
+      "status": "passed",
+      "seconds": 0.012312247999943793,
+      "detail": {
+        "torch": "2.2.0",
+        "torchvision": "0.17.0",
+        "torchaudio": "2.2.0",
+        "transformers": "4.40.1",
+        "tokenizers": "0.19.1",
+        "timm": "0.9.10",
+        "flash-attn": "2.5.5",
+        "peft": "0.11.1",
+        "numpy": "1.26.4",
+        "tensorflow": "2.15.0",
+        "robosuite": "1.4.1",
+        "mujoco": "2.3.7",
+        "tensorflow-metadata": "1.17.2",
+        "protobuf": "4.21.12"
+      }
+    },
+    "local_sources": {
+      "status": "passed",
+      "seconds": 75.56218710199937,
+      "detail": {
+        "prismatic": "/home/kony/dissertation/quic-wc-mpv/external/openvla/prismatic/__init__.py",
+        "libero_namespace_paths": [
+          "/home/kony/dissertation/quic-wc-mpv/external/libero/libero"
+        ]
+      }
+    },
+    "cuda_math": {
+      "status": "passed",
+      "seconds": 5.183016760998726,
+      "detail": {
+        "name": "NVIDIA GeForce RTX 4090",
+        "torch_cuda": "12.1",
+        "total_memory_bytes": 25756696576,
+        "svd_relative_error": 8.556199645681772e-06,
+        "orthogonality_max_error": 3.5762786865234375e-07,
+        "gradient_norm": 57.32075119018555,
+        "identity_init_direct_sum_gradient_norm": 24.69782829284668,
+        "identity_init_compound_only_gradient_norm": 0.0,
+        "identity_init_explicit_c2_gradient_norm": 46.472145080566406,
+        "identity_init_det_gradient_max_error": 15.727612495422363
+      }
+    },
+    "flash_attention": {
+      "status": "passed",
+      "seconds": 0.4573078680004983,
+      "detail": {
+        "shape": [
+          1,
+          16,
+          4,
+          32
+        ],
+        "max_error_vs_fp32_sdpa": 0.005048871040344238,
+        "backward": "finite"
+      }
+    },
+    "tensorflow_preprocessing": {
+      "status": "passed",
+      "seconds": 0.07343166200007545,
+      "detail": {
+        "resize_shape": [
+          16,
+          16,
+          3
+        ],
+        "visible_gpus": 0
+      }
+    },
+    "openvla_synthetic_inference": {
+      "status": "passed",
+      "seconds": 3.8154276839995873,
+      "detail": {
+        "weights": "random miniature model; no policy-quality evaluation",
+        "logits_shape": [
+          1,
+          199,
+          32064
+        ],
+        "action_shape": [
+          7
+        ],
+        "vision_hook_shapes": [
+          [
+            [
+              1,
+              197,
+              192
+            ],
+            [
+              1,
+              197,
+              768
+            ]
+          ],
+          [
+            [
+              1,
+              197,
+              192
+            ],
+            [
+              1,
+              197,
+              768
+            ]
+          ]
+        ],
+        "attention_class": "LlamaFlashAttention2"
+      }
+    },
+    "libero_render": {
+      "status": "passed",
+      "seconds": 16.638576833000116,
+      "detail": {
+        "task": "pick_up_the_black_bowl_between_the_plate_and_the_ramekin_and_place_it_on_the_plate",
+        "frame_shape": [
+          128,
+          128,
+          3
+        ],
+        "frame_std": 50.348312927546345,
+        "render_backend": "egl",
+        "simulation_steps": 3
+      }
+    }
+  },
+  "versions": {
+    "torch": "2.2.0",
+    "torchvision": "0.17.0",
+    "torchaudio": "2.2.0",
+    "transformers": "4.40.1",
+    "tokenizers": "0.19.1",
+    "timm": "0.9.10",
+    "flash-attn": "2.5.5",
+    "peft": "0.11.1",
+    "numpy": "1.26.4",
+    "tensorflow": "2.15.0",
+    "robosuite": "1.4.1",
+    "mujoco": "2.3.7",
+    "tensorflow-metadata": "1.17.2",
+    "protobuf": "4.21.12"
+  },
+  "scope": "offline synthetic environment checks",
+  "python": "3.10.20 (main, Jun 11 2026, 15:17:37) [GCC 14.3.0]",
+  "executable": "/home/kony/dissertation/quic-wc-mpv/.conda/openvla-gpu/bin/python",
+  "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+  "project_root": "/home/kony/dissertation/quic-wc-mpv",
+  "gpu": {
+    "name": "NVIDIA GeForce RTX 4090",
+    "torch_cuda": "12.1",
+    "total_memory_bytes": 25756696576
+  },
+  "limitations": [
+    "torch.linalg.det C2 backward at exact identity differs from the explicit 2x2 formula; use the explicit formula for order 2 or avoid identity initialization of C2."
+  ],
+  "passed": true
+}

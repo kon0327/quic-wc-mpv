@@ -1,0 +1,12 @@
+{
+  "clone_source": "/home/kony/miniconda3/envs/openvla",
+  "environment_prefix": "/home/kony/dissertation/quic-wc-mpv/.conda/openvla-gpu",
+  "openvla": "/home/kony/dissertation/quic-wc-mpv/external/openvla",
+  "libero": "/home/kony/dissertation/quic-wc-mpv/external/libero",
+  "libero_namespace_pth": "quic_wc_libero_source.pth",
+  "upstream_snapshot": "2026-07-17",
+  "compatibility_overrides": {
+    "tensorflow-metadata": "1.17.2",
+    "protobuf": "4.21.12"
+  }
+}
