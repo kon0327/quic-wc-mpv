@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quic-wc"
+version = "0.1.0.dev0"
+description = "QuIC-WC: weight compression of linear layers by compound (QuIC) orthogonal thin factors"
+requires-python = ">=3.10"
+dependencies = ["torch>=2.2", "safetensors>=0.4"]
+
+[project.optional-dependencies]
+# The OpenVLA/LIBERO pilot reuses the project environment .conda/openvla-gpu (timm, TF, TFDS, torchvision).
+pilot = ["timm==0.9.10", "torchvision", "tensorflow", "tensorflow-datasets", "pillow"]
+test = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+# The package is used from the source tree; the shared conda environment is not modified.
+pythonpath = ["src"]
+testpaths = ["tests"]
+markers = ["cuda: requires a CUDA device"]

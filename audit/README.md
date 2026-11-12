@@ -18,3 +18,5 @@ Každý záznam podle potřeby obsahuje:
 - [Analýza a plán implementace](2026-10-01-implementation-plan.md) — retrospektivní audit prvního úkolu.
 - [Příprava a ověření GPU prostředí](2026-10-01-gpu-environment.md) — retrospektivní audit prostředí a chyb nalezených při jeho přípravě.
 - [Zavedení auditování](2026-10-01-audit-convention.md) — zavedení pravidla a doplnění předchozích záznamů.
+- [Analýza projektu pro paměť agenta](2026-11-12-agent-memory.md) — read-only analýza, paměť mimo repozitář.
+- [Matematické jádro M1 a první pilot](2026-11-12-m1-core-pilot.md) — implementace `src/quic_wc`, testy, pilot na DINOv2 fc1 (LIBERO-10), chyba cache ASVD a její oprava, test posunu domény.

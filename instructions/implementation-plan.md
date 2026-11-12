@@ -232,3 +232,19 @@ Prošly CUDA FP32/BF16 operace, SVD, ortogonalita a gradienty direct sum, FlashA
 **Důsledek pro M1:** PyTorch 2.2/CUDA zde vrací nulový gradient compound řádu 2 při přesně identitní bázi přes `torch.linalg.det`, zatímco explicitní determinant `ad-bc` vrací nenulovou derivaci. Direct sum s řádem 1 má gradient a náhodný init prošel. Jádro musí mít kontrolu singulárních minorů a pro řád 2 využít ověřený explicitní vzorec.
 
 Návod a přesné výsledky: [GPU prostředí](../deploy/environments/openvla/README.md). M0 zatím nepovažujeme za kompletní: zbývá načíst skutečný checkpoint OpenVLA-7B, ověřit jeho paměťový rozpočet a policy rollout. Syntetické testy nejsou evaluací politiky. Matematické jádro M1 zatím není implementované.
+
+## 10. Aktualizace — 12. 11. 2026: M1 a první pilot jedné vrstvy
+
+**M0 (CPU část) a M1 jsou implementované:** balíček `src/quic_wc/` (src layout, `pyproject.toml`; sdílené conda prostředí se neinstalací nemění), Cayley přes `solve`, explicitní compound C1–C3 se správným gradientem při identitě, vícestupňové strukturované transformace s permutacemi, tenké faktory, `QuICWCLinear` s nepersistentní cache a invalidací, kompaktní export. Ověření: 60 testů (CPU i CUDA) a numerický report; návrh a výsledky v [docs/m1-math-core.md](../docs/m1-math-core.md). Měřením je potvrzeno, že `torch.linalg.det` dává při identitě nulový gradient (C2 i C3), zatímco explicitní polynomy odpovídají konečným diferencím.
+
+**Pilot M2/M3** na `vision_backbone.featurizer.blocks.0.mlp.fc1` (4096×1024) checkpointu `openvla-7b-finetuned-libero-10` (odchylka: checkpoint LIBERO-Spatial lokálně není), 40/10 epizod LIBERO-10: [docs/pilot-2026-11-12.md](../docs/pilot-2026-11-12.md). Naměřeno na validaci (relL2 bez biasu):
+
+- Jednostupňová varianta ze zadání selhává (0.865–0.978); více stupňů bez permutace je podle Cauchy–Binetovy věty totéž.
+- 16 stupňů s permutací `stride`/`random`: 0.134 (kosinus bez biasu 0.987, 3.2 % bajtů); 64 stupňů: 0.0625, s korekcí biasu 0.0507.
+- Při stejném počtu parametrů je QuIC-WC o 11–28 % lepší než aktivačně vážená SVD (ASVD); při stejných bajtech s θ ve FP32 je lepší ASVD. Uložení θ v BF16 je téměř bezeztrátové.
+- Compound řády nemají při stejném rozpočtu měřitelný vliv; rozhoduje počet míchaných stupňů.
+- Pozitivní kontrola: učitel ze stejné rodiny se z identity obnoví jen při malých rotacích → výsledky jsou omezené optimalizací.
+
+**Brány:** M2 (SVD baseline s kosinem > 0.98) splněna od SVD ranku 128 (0.983) a ASVD ranku 16 (0.983). M3 je formálně splněna (např. stride L16: kosinus bez biasu 0.987 s 3.2 % bajtů), ale stávající brána nerozlišuje metody; kosinus s biasem dosahuje 0.963 i pro samotný bias. **Navrhovaná úprava brány M3:** relL2/kosinus bez biasu proti ASVD při stejných bajtech, s korekcí biasu u všech metod.
+
+**Upravené pořadí další práce (návrh, zatím neprovedeno):** (1) zopakovat pilot na 2–3 dalších vrstvách; (2) řešit optimalizační bariéru (restarty, postupné přidávání stupňů, inicializace); (3) θ v BF16 v exportu; (4) M4-lite: nahrazení vrstvy v modelu a vliv na výstup featurizeru a akční tokeny; teprve potom M5 rollouty. Rozhodnutí, zda pokračovat k M4/M5, závisí na tom, zda výhoda proti ASVD přetrvá na dalších vrstvách.

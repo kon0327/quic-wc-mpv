@@ -1,0 +1,39 @@
+{
+  "description": "Pilot M2/M3 (2026-11-12): QuIC-WC on vision_backbone.featurizer.blocks.0.mlp.fc1 of openvla-7b-finetuned-libero-10; SVD/ASVD baselines, ablations of mixing, stages, orders, base, rank, sigma and bias policy; positive and negative controls.",
+  "bias_policies": ["fixed", "corrected"],
+  "svd_ranks": [4, 8, 12, 16, 25, 32, 50, 64, 99, 128, 256, 512],
+  "asvd_ranks": [4, 8, 12, 16, 25, 32, 50, 64, 99, 128, 256, 512],
+  "defaults": {
+    "bias_policy": "fixed",
+    "fit": {"steps": 3000, "lr": 0.03, "eval_every": 100, "max_grad_norm": 1.0, "weight_decay": 0.0, "min_lr_ratio": 0.0}
+  },
+  "experiments": [
+    {"name": "spec_n8K12_L1_r256_sfix", "description": "exact phase1-4 variant: one direct sum, fixed sigma, rank 256",
+     "rank": 256, "sigma_mode": "fixed", "left": {"base_size": 8, "orders": [1, 2]}},
+    {"name": "spec_n8K12_L1_r1024_sfix", "rank": 1024, "sigma_mode": "fixed", "left": {"base_size": 8, "orders": [1, 2]}},
+    {"name": "spec_n8K12_L1_r1024", "rank": 1024, "left": {"base_size": 8, "orders": [1, 2]}},
+    {"name": "ident_n8K12_L16", "description": "16 stages without permutation; Cauchy-Binet predicts the same family as one stage",
+     "rank": 1024, "left": {"base_size": 8, "orders": [1, 2], "num_stages": 16, "permutation": "identity"}},
+    {"name": "cyclic_n8K12_L16", "rank": 1024, "left": {"base_size": 8, "orders": [1, 2], "num_stages": 16, "permutation": "cyclic"}},
+    {"name": "random_n8K12_L16", "rank": 1024, "left": {"base_size": 8, "orders": [1, 2], "num_stages": 16, "permutation": "random", "seed": 0}},
+    {"name": "stride_n8K12_L4", "rank": 1024, "left": {"base_size": 8, "orders": [1, 2], "num_stages": 4, "permutation": "stride"}},
+    {"name": "stride_n8K12_L16", "rank": 1024, "left": {"base_size": 8, "orders": [1, 2], "num_stages": 16, "permutation": "stride"}},
+    {"name": "stride_n8K12_L64", "rank": 1024, "left": {"base_size": 8, "orders": [1, 2], "num_stages": 64, "permutation": "stride"}},
+    {"name": "stride_n8K12_L16_r256", "rank": 256, "left": {"base_size": 8, "orders": [1, 2], "num_stages": 16, "permutation": "stride"}},
+    {"name": "stride_n8K12_L16_sfix", "rank": 1024, "sigma_mode": "fixed", "left": {"base_size": 8, "orders": [1, 2], "num_stages": 16, "permutation": "stride"}},
+    {"name": "stride_n8K1_L4", "description": "orders [1] only (block-diagonal SO(8)), theta budget close to stride_n8K12_L16",
+     "rank": 1024, "left": {"base_size": 8, "orders": [1], "num_stages": 4, "permutation": "stride"}},
+    {"name": "stride_n8K123_L41", "rank": 1024, "left": {"base_size": 8, "orders": [1, 2, 3], "num_stages": 41, "permutation": "stride"}},
+    {"name": "stride_n16K12_L14", "rank": 1024, "left": {"base_size": 16, "orders": [1, 2], "num_stages": 14, "permutation": "stride"}},
+    {"name": "stride_n8K12_L16_bc", "bias_policy": "corrected", "rank": 1024, "left": {"base_size": 8, "orders": [1, 2], "num_stages": 16, "permutation": "stride"}},
+    {"name": "stride_n8K12_L64_bc", "bias_policy": "corrected", "rank": 1024, "left": {"base_size": 8, "orders": [1, 2], "num_stages": 64, "permutation": "stride"}},
+    {"name": "posctl_L4_s0.1", "teacher": "positive_control", "teacher_theta_scale": 0.1, "teacher_seed": 1,
+     "rank": 1024, "left": {"base_size": 8, "orders": [1, 2], "num_stages": 4, "permutation": "stride"}},
+    {"name": "posctl_L4_s0.3", "teacher": "positive_control", "teacher_theta_scale": 0.3, "teacher_seed": 1,
+     "rank": 1024, "left": {"base_size": 8, "orders": [1, 2], "num_stages": 4, "permutation": "stride"}},
+    {"name": "posctl_L4_s0.3_iso", "teacher": "positive_control", "teacher_theta_scale": 0.3, "teacher_seed": 1,
+     "objective_override": "identity", "rank": 1024, "left": {"base_size": 8, "orders": [1, 2], "num_stages": 4, "permutation": "stride"}},
+    {"name": "negctl_L16", "teacher": "negative_control", "teacher_seed": 1,
+     "rank": 1024, "left": {"base_size": 8, "orders": [1, 2], "num_stages": 16, "permutation": "stride"}}
+  ]
+}
