@@ -1,0 +1,42 @@
+{
+  "description": "Optimisation study (2026-11-12) on vision_backbone.featurizer.blocks.0.mlp.fc1: conjugated stage form vs chain, longer schedules, progressive stage growth and random restarts; positive control theta*0.3 as the optimisation diagnostic. BF16 storage, best step selected on the train objective.",
+  "bias_policies": ["fixed"],
+  "defaults": {
+    "bias_policy": "fixed",
+    "storage_dtype": "bfloat16",
+    "fit": {"steps": 3000, "lr": 0.03, "eval_every": 100, "max_grad_norm": 1.0, "weight_decay": 0.0, "min_lr_ratio": 0.0, "select_on": "train"}
+  },
+  "experiments": [
+    {"name": "conj_L16", "description": "conjugated form, same budget as grid-v1 stride_n8K12_L16 (chain)",
+     "rank": 1024, "left": {"base_size": 8, "orders": [1, 2], "num_stages": 16, "permutation": "stride", "stage_form": "conjugated"}},
+    {"name": "conj_L16_10k", "rank": 1024, "fit": {"steps": 10000},
+     "left": {"base_size": 8, "orders": [1, 2], "num_stages": 16, "permutation": "stride", "stage_form": "conjugated"}},
+    {"name": "conj_L64_10k", "rank": 1024, "fit": {"steps": 10000},
+     "left": {"base_size": 8, "orders": [1, 2], "num_stages": 64, "permutation": "stride", "stage_form": "conjugated"}},
+    {"name": "conj_grow", "description": "progressive growth 4->8->16->32->64, identity stages appended, fresh optimizer per phase",
+     "rank": 1024, "growth": [4, 8, 16, 32, 64], "growth_steps": [3000, 2000, 2000, 2000, 2000],
+     "left": {"base_size": 8, "orders": [1, 2], "permutation": "stride", "stage_form": "conjugated"}},
+    {"name": "conj_L16_restart8", "description": "8 starts (identity + 7 random theta~N(0,0.05^2)), 300 screening steps, best train continues",
+     "rank": 1024, "restarts": {"count": 8, "scale": 0.05, "screen_steps": 300, "seed": 0},
+     "left": {"base_size": 8, "orders": [1, 2], "num_stages": 16, "permutation": "stride", "stage_form": "conjugated"}},
+    {"name": "posctl_conj_L4_s0.3", "teacher": "positive_control", "teacher_theta_scale": 0.3, "teacher_seed": 1,
+     "rank": 1024, "left": {"base_size": 8, "orders": [1, 2], "num_stages": 4, "permutation": "stride", "stage_form": "conjugated"}},
+    {"name": "posctl_conj_L4_s0.3_10k", "teacher": "positive_control", "teacher_theta_scale": 0.3, "teacher_seed": 1,
+     "rank": 1024, "fit": {"steps": 10000},
+     "left": {"base_size": 8, "orders": [1, 2], "num_stages": 4, "permutation": "stride", "stage_form": "conjugated"}},
+    {"name": "posctl_conj_L4_s0.3_restart8", "teacher": "positive_control", "teacher_theta_scale": 0.3, "teacher_seed": 1,
+     "rank": 1024, "restarts": {"count": 8, "scale": 0.3, "screen_steps": 300, "seed": 0},
+     "left": {"base_size": 8, "orders": [1, 2], "num_stages": 4, "permutation": "stride", "stage_form": "conjugated"}},
+    {"name": "posctl_conj_s0.3_grow", "description": "teacher L4; student grows 1->2->4",
+     "teacher": "positive_control", "teacher_theta_scale": 0.3, "teacher_seed": 1,
+     "teacher_config": {"left": {"base_size": 8, "orders": [1, 2], "num_stages": 4, "permutation": "stride", "stage_form": "conjugated"},
+                        "right": {"base_size": 8, "orders": [1, 2], "num_stages": 4, "permutation": "stride", "stage_form": "conjugated"}},
+     "rank": 1024, "growth": [1, 2, 4], "growth_steps": [2000, 2000, 3000],
+     "left": {"base_size": 8, "orders": [1, 2], "permutation": "stride", "stage_form": "conjugated"}},
+    {"name": "posctl_conj_L8_s0.3", "description": "over-parameterised student (L8) for an L4 teacher",
+     "teacher": "positive_control", "teacher_theta_scale": 0.3, "teacher_seed": 1,
+     "teacher_config": {"left": {"base_size": 8, "orders": [1, 2], "num_stages": 4, "permutation": "stride", "stage_form": "conjugated"},
+                        "right": {"base_size": 8, "orders": [1, 2], "num_stages": 4, "permutation": "stride", "stage_form": "conjugated"}},
+     "rank": 1024, "left": {"base_size": 8, "orders": [1, 2], "num_stages": 8, "permutation": "stride", "stage_form": "conjugated"}}
+  ]
+}

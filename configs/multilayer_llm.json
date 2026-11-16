@@ -1,0 +1,134 @@
+{
+  "description": "Multi-layer pilot (2026-11-12), Llama-2 layers without bias: adaptive L as a sweep of from-scratch fits (conjugated stride stages, n=8, K=[1,2]), rank 1024 (one rank-4096 check), BF16 storage, train-objective selection, fixed (absent) bias; ASVD/SVD baselines; positive and negative control. Orders ablation K=[1] at matched budgets.",
+  "bias_policies": [
+    "fixed"
+  ],
+  "svd_ranks": [
+    4,
+    8,
+    16,
+    32,
+    64,
+    128,
+    256,
+    512,
+    1024,
+    2048
+  ],
+  "asvd_ranks": [
+    4,
+    8,
+    16,
+    25,
+    32,
+    50,
+    64,
+    99,
+    128,
+    198,
+    256,
+    512,
+    1024,
+    2048
+  ],
+  "defaults": {
+    "bias_policy": "fixed",
+    "storage_dtype": "bfloat16",
+    "fit": {
+      "steps": 3000,
+      "lr": 0.03,
+      "eval_every": 100,
+      "max_grad_norm": 1.0,
+      "weight_decay": 0.0,
+      "min_lr_ratio": 0.0,
+      "select_on": "train"
+    }
+  },
+  "experiments": [
+    {
+      "name": "sweep_r1024",
+      "rank": 1024,
+      "stages_sweep": [
+        16,
+        32,
+        64,
+        128
+      ],
+      "left": {
+        "base_size": 8,
+        "orders": [
+          1,
+          2
+        ],
+        "permutation": "stride",
+        "stage_form": "conjugated"
+      }
+    },
+    {
+      "name": "r4096_L32",
+      "description": "rank check: full rank at L32",
+      "rank": "full",
+      "left": {
+        "base_size": 8,
+        "orders": [
+          1,
+          2
+        ],
+        "num_stages": 32,
+        "permutation": "stride",
+        "stage_form": "conjugated"
+      }
+    },
+    {
+      "name": "k1_sweep_r1024",
+      "description": "orders [1] (plain SO(8) blocks, no compound); 7/14/28 stages ~ parameter budget of K=[1,2] L32/L64/L128",
+      "rank": 1024,
+      "stages_sweep": [
+        7,
+        14,
+        28
+      ],
+      "left": {
+        "base_size": 8,
+        "orders": [
+          1
+        ],
+        "permutation": "stride",
+        "stage_form": "conjugated"
+      }
+    },
+    {
+      "name": "posctl_L16_s0.1",
+      "teacher": "positive_control",
+      "teacher_theta_scale": 0.1,
+      "teacher_seed": 1,
+      "rank": 1024,
+      "left": {
+        "base_size": 8,
+        "orders": [
+          1,
+          2
+        ],
+        "num_stages": 16,
+        "permutation": "stride",
+        "stage_form": "conjugated"
+      }
+    },
+    {
+      "name": "negctl_L16",
+      "teacher": "negative_control",
+      "teacher_seed": 1,
+      "rank": 1024,
+      "left": {
+        "base_size": 8,
+        "orders": [
+          1,
+          2
+        ],
+        "num_stages": 16,
+        "permutation": "stride",
+        "stage_form": "conjugated"
+      }
+    }
+  ]
+}

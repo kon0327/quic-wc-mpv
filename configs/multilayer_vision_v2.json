@@ -1,0 +1,124 @@
+{
+  "description": "Multi-layer pilot recipe v2 (2026-11-12): as multilayer_vision.json, plus depth-scaled LR lr = 0.03*min(1, (16/L)^0.5) (finding: deep chains under-train with a fixed LR).",
+  "bias_policies": [
+    "fixed",
+    "corrected"
+  ],
+  "svd_ranks": [
+    4,
+    8,
+    16,
+    32,
+    64,
+    128,
+    256,
+    512
+  ],
+  "asvd_ranks": [
+    4,
+    8,
+    12,
+    16,
+    25,
+    32,
+    50,
+    64,
+    99,
+    128,
+    256,
+    512
+  ],
+  "defaults": {
+    "bias_policy": "fixed",
+    "storage_dtype": "bfloat16",
+    "fit": {
+      "steps": 3000,
+      "lr": 0.03,
+      "eval_every": 100,
+      "max_grad_norm": 1.0,
+      "weight_decay": 0.0,
+      "min_lr_ratio": 0.0,
+      "select_on": "train"
+    },
+    "lr_depth_scaling": {
+      "reference_stages": 16,
+      "power": 0.5
+    }
+  },
+  "experiments": [
+    {
+      "name": "sweep",
+      "rank": "full",
+      "stages_sweep": [
+        4,
+        8,
+        16,
+        32,
+        64
+      ],
+      "left": {
+        "base_size": 8,
+        "orders": [
+          1,
+          2
+        ],
+        "permutation": "stride",
+        "stage_form": "conjugated"
+      }
+    },
+    {
+      "name": "sweep_bc",
+      "bias_policy": "corrected",
+      "rank": "full",
+      "stages_sweep": [
+        4,
+        8,
+        16,
+        32,
+        64
+      ],
+      "left": {
+        "base_size": 8,
+        "orders": [
+          1,
+          2
+        ],
+        "permutation": "stride",
+        "stage_form": "conjugated"
+      }
+    },
+    {
+      "name": "posctl_L4_s0.1",
+      "teacher": "positive_control",
+      "teacher_theta_scale": 0.1,
+      "teacher_seed": 1,
+      "rank": "full",
+      "left": {
+        "base_size": 8,
+        "orders": [
+          1,
+          2
+        ],
+        "num_stages": 4,
+        "permutation": "stride",
+        "stage_form": "conjugated"
+      }
+    },
+    {
+      "name": "negctl_L16",
+      "teacher": "negative_control",
+      "teacher_seed": 1,
+      "rank": "full",
+      "left": {
+        "base_size": 8,
+        "orders": [
+          1,
+          2
+        ],
+        "num_stages": 16,
+        "permutation": "stride",
+        "stage_form": "conjugated"
+      }
+    }
+  ]
+}

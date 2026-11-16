@@ -248,3 +248,41 @@ Návod a přesné výsledky: [GPU prostředí](../deploy/environments/openvla/RE
 **Brány:** M2 (SVD baseline s kosinem > 0.98) splněna od SVD ranku 128 (0.983) a ASVD ranku 16 (0.983). M3 je formálně splněna (např. stride L16: kosinus bez biasu 0.987 s 3.2 % bajtů), ale stávající brána nerozlišuje metody; kosinus s biasem dosahuje 0.963 i pro samotný bias. **Navrhovaná úprava brány M3:** relL2/kosinus bez biasu proti ASVD při stejných bajtech, s korekcí biasu u všech metod.
 
 **Upravené pořadí další práce (návrh, zatím neprovedeno):** (1) zopakovat pilot na 2–3 dalších vrstvách; (2) řešit optimalizační bariéru (restarty, postupné přidávání stupňů, inicializace); (3) θ v BF16 v exportu; (4) M4-lite: nahrazení vrstvy v modelu a vliv na výstup featurizeru a akční tokeny; teprve potom M5 rollouty. Rozhodnutí, zda pokračovat k M4/M5, závisí na tom, zda výhoda proti ASVD přetrvá na dalších vrstvách.
+
+## 11. Aktualizace — 12. 11. 2026 (večer): rozhodnutí, brána M3, BF16 a pilot na čtyřech vrstvách
+
+**Rozhodnutí uživatele (12. 11. 2026):** odchylka od jednoho přímého součtu je přijatelná; pokračuje se
+vícestupňovou variantou s permutacemi, `L` se volí adaptivně pro každou vrstvu, baseline je ASVD; doplnit export
+s θ v BF16; upravit bránu M3; před M4/M5 pilot na 2–3 dalších vrstvách a lepší optimalizace.
+
+**Brána M3 (nové znění, nahrazuje bránu z oddílu M3 výše):** konfigurace vrstvy projde, když její validační relL2
+výstupu bez biasu (nasaditelná podoba načtená z artefaktu, θ/σ v BF16) je nižší než u ASVD s alespoň stejným
+počtem bajtů uložených tensorů (BF16 faktory, stejná politika biasu), při poměru bajtů ≤ 0.25 vůči husté BF16
+vrstvě. Vrstva projde, když projde aspoň jedna konfigurace. Implementace: `gate_m3`/`layer_gate` v
+`src/quic_wc/pilot/run.py`. Práh 0.25 zvolil agent. Brána neobsahuje absolutní požadavek na kvalitu; ten má určit
+M4-lite (viz níže).
+
+**Hotovo a ověřeno:** formát v2 s `storage_dtype` (BF16 θ/σ), konjugovaný tvar stupně (umožňuje růst stupňů),
+výběr kroku podle trénovacího cíle, LR škálovaný hloubkou, rychlejší stupeň a checkpointing, kalibrace z celého
+modelu přes `predict_action` (`collect_vla.py`), sweep `L`, souhrn přes vrstvy. Testy: 73. Report:
+[docs/pilot-multilayer-2026-11-12.md](../docs/pilot-multilayer-2026-11-12.md); audit:
+[audit/2026-11-12-bf16-gate-optim-multilayer.md](../audit/2026-11-12-bf16-gate-optim-multilayer.md).
+
+**Výsledek brány M3 (recept v2, 3000 kroků, LR `0.03·min(1,(16/L)^0.5)`):**
+
+| vrstva | M3 | nejlepší rezerva proti ASVD ≥B | relL2 QuIC-WC (poměr bajtů) |
+|---|---|---:|---|
+| DINOv2 blok 0 `mlp.fc1` (4096×1024) | prošla (fixed 5/5, corrected 5/5) | 28.2 % / 36.1 % | 0.0510 (0.061) |
+| SigLIP blok 13 `mlp.fc1` (4304×1152) | prošla (fixed 4/5, corrected 5/5) | 11.2 % / 12.9 % | 0.2785 (0.056) |
+| Llama L15 `self_attn.q_proj` (4096×4096) | prošla (7/7) | 9.4 % | 0.3195 (0.048) |
+| Llama L15 `mlp.down_proj` (4096×11008) | prošla (7/7) | 6.1 % | 0.7425 (0.033) |
+
+Brána prošla všude, ale absolutní chyba se mezi vrstvami liší řádově; na `down_proj` jsou obě metody při
+užitečném rozpočtu nepoužitelné (ASVD při 69 % bajtů: 0.333). Bez absolutního kritéria brána o použitelnosti
+nerozhoduje.
+
+**Upravené pořadí další práce (návrh, zatím neprovedeno):** (1) **M4-lite** — nahradit vybrané vrstvy v modelu
+artefakty QuIC-WC a měřit vliv na výstup featurizeru / LLM a shodu akčních tokenů (reference: 83.6 % shoda greedy
+tokenů s datasetem); z toho odvodit cílovou chybu na vrstvu a doplnit bránu o absolutní kvalitu; (2) rozhodnout
+o roli compound řádů (viz report: na q_proj je K=[1] při stejných bajtech rovnocenné a 4–7× rychlejší);
+(3) delší trénink a dotrénování po zaokrouhlení do BF16 pro vybrané vrstvy; (4) M5 rollouty až po M4-lite.

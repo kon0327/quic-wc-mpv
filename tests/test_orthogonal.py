@@ -55,6 +55,16 @@ def test_apply_matches_dense_reference_and_is_orthogonal(case):
     sel = select_columns(lay, min(17, lay.dim))
     thin = module.thin(sel)
     assert torch.allclose(thin, q[:, sel], atol=1e-13)
+    if case["perm"] != "identity":  # conjugated form: Q_conj = R_L^T Q_chain with cumulative R_L
+        conj = QuICOrthogonal(lay, case["stages"], case["perm"], seed=3, stage_form="conjugated", dtype=torch.float64)
+        with torch.no_grad():
+            conj.theta.copy_(module.theta)
+        cumulative = torch.arange(lay.dim)
+        for perm in module.perms:
+            cumulative = cumulative[perm]
+        r = torch.zeros(lay.dim, lay.dim, dtype=torch.float64)
+        r[torch.arange(lay.dim), cumulative] = 1.0
+        assert torch.allclose(conj.matrix(), r.T @ dense_reference(module), atol=1e-12)
 
 
 def test_float32_orthonormality_threshold():

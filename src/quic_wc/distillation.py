@@ -5,6 +5,10 @@ the teacher output energy: ``tr(dW C dW^T) / tr(W C W^T)`` with ``dW = W_hat - W
 the minibatch MSE of instructions/phase3.md in expectation, without minibatch noise and without
 iterating over stored activations. AdamW, warmup + cosine schedule, global gradient clipping;
 a non-finite loss or gradient stops the run before the optimizer step (no corrupted export).
+
+``restore_best`` keeps the state with the lowest selection objective seen at evaluation steps:
+the validation objective (``select_on="val"``, v1 default) or the train objective
+(``select_on="train"``), which keeps validation data out of every model choice.
 """
 
 from __future__ import annotations
@@ -34,6 +38,11 @@ class FitConfig:
     max_grad_norm: float = 1.0
     eval_every: int = 100
     restore_best: bool = True
+    select_on: str = "val"
+
+    def __post_init__(self) -> None:
+        if self.select_on not in ("val", "train"):
+            raise ValueError("select_on must be 'val' or 'train'")
 
     def to_dict(self) -> dict[str, Any]:
         out = asdict(self)
@@ -89,17 +98,21 @@ def fit(module: QuICWCLinear, weight: Tensor, c_train: Tensor, *, c_val: Tensor 
     best = (math.inf, 0, copy.deepcopy(module.state_dict()))
     status, loss_value, step = "completed", math.nan, 0
 
-    def evaluate() -> float:
+    def evaluate() -> tuple[float, float]:
+        """(train, val) relative objectives of the current state; val falls back to train."""
         with torch.no_grad():
-            w_hat = module.reconstruct_weight()
-            if c_va is None:
-                return float(quadratic_error(w_hat - w, c_tr) / denom_tr)
-            return float(quadratic_error(w_hat - w, c_va) / denom_va)
+            delta = module.reconstruct_weight() - w
+            train = float(quadratic_error(delta, c_tr) / denom_tr)
+            return train, (train if c_va is None else float(quadratic_error(delta, c_va) / denom_va))
 
-    initial = evaluate()
-    history.append({"step": 0, "train_rel_mse": float("nan"), "val_rel_mse": initial, "lr": cfg.lr,
+    def selection(train: float, val: float) -> float:
+        return val if cfg.select_on == "val" else train
+
+    initial_train, initial = evaluate()
+    history.append({"step": 0, "train_rel_mse": initial_train, "val_rel_mse": initial, "lr": cfg.lr,
                     "grad_norm": float("nan"), "seconds": 0.0})
-    best = (initial, 0, copy.deepcopy(module.state_dict()))
+    best = (selection(initial_train, initial), 0, copy.deepcopy(module.state_dict()))
+    best_val = initial
     for step in range(1, cfg.steps + 1):
         optimizer.zero_grad(set_to_none=True)
         loss = quadratic_error(module.reconstruct_weight() - w, c_tr) / denom_tr
@@ -116,14 +129,16 @@ def fit(module: QuICWCLinear, weight: Tensor, c_train: Tensor, *, c_val: Tensor 
         optimizer.step()
         scheduler.step()
         if step % cfg.eval_every == 0 or step == cfg.steps:
-            val = evaluate()
+            train_now, val = evaluate()  # after the step (loss_value is the pre-step train objective)
             history.append({"step": step, "train_rel_mse": loss_value, "val_rel_mse": val, "lr": lr_now,
-                            "grad_norm": grad_norm, "seconds": time.perf_counter() - start})
-            if not math.isfinite(val):
+                            "grad_norm": grad_norm, "seconds": time.perf_counter() - start,
+                            "train_rel_mse_after": train_now})
+            if not (math.isfinite(val) and math.isfinite(train_now)):
                 status = "nonfinite_validation"
                 break
-            if val < best[0]:
-                best = (val, step, copy.deepcopy(module.state_dict()))
+            if selection(train_now, val) < best[0]:
+                best = (selection(train_now, val), step, copy.deepcopy(module.state_dict()))
+                best_val = val
             if log_every and step % log_every == 0:
                 print(f"step {step:5d} train {loss_value:.5f} val {val:.5f} |g| {grad_norm:.3g} lr {lr_now:.2e}",
                       flush=True)
@@ -133,4 +148,4 @@ def fit(module: QuICWCLinear, weight: Tensor, c_train: Tensor, *, c_val: Tensor 
     if cfg.restore_best:
         module.load_state_dict(best[2])
     peak = torch.cuda.max_memory_allocated(device) if device.type == "cuda" else None
-    return FitResult(status, completed, best[1], best[0], loss_value, time.perf_counter() - start, peak, history)
+    return FitResult(status, completed, best[1], best_val, loss_value, time.perf_counter() - start, peak, history)

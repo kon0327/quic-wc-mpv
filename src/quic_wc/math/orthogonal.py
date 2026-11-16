@@ -9,6 +9,13 @@ orthonormal thin factor (no row truncation of a larger matrix).
 Consequence of Cauchy-Binet: stages with the *same* block grouping multiply to a single stage
 (``C_k(A) C_k(B) = C_k(AB)``). Extra stages therefore add capacity only together with a
 permutation that changes the grouping ("cyclic", "stride", "random").
+
+Stage forms. "chain" (format v1 default): ``Q = B_L P_L ... B_2 P_2 B_1`` (``P_1 = I``).
+"conjugated": ``Q = (R_L^T B_L R_L) ... (R_1^T B_1 R_1)`` with cumulative permutations
+``R_l = P_l ... P_1``. Since ``B_L P_L ... B_1 = R_L (R_L^T B_L R_L) ... (R_1^T B_1 R_1)``, both
+forms span the same family up to the fixed row permutation ``R_L``. Only the conjugated form has
+``Q = I`` at ``theta = 0`` for every ``L``, so stages can be appended (applied last) without
+changing the transform: this is what progressive stage growth needs.
 """
 
 from __future__ import annotations
@@ -19,11 +26,13 @@ from typing import Any, Sequence
 
 import torch
 from torch import Tensor, nn
+from torch.utils.checkpoint import checkpoint
 
 from .cayley import SUPPORTED_DTYPES, cayley, skew_from_params, skew_size
 from .compound import combinations, compound_dim, compound_matrix
 
 PERMUTATIONS = ("identity", "cyclic", "stride", "random")
+STAGE_FORMS = ("chain", "conjugated")
 SELECTIONS = ("spread", "leading")
 MAX_ORDER = 3
 
@@ -114,6 +123,22 @@ def make_permutation(kind: str, dim: int, stage: int, *, block_size: int, seed: 
     return torch.randperm(dim, generator=generator)
 
 
+def stage_permutations(kind: str, dim: int, num_stages: int, *, block_size: int, seed: int = 0,
+                       form: str = "chain") -> Tensor:
+    """Gather indices per stage: ``P_l`` ("chain") or the cumulative ``R_l = P_l ... P_1`` ("conjugated").
+
+    ``(R x)[j] = x[r[j]]`` with ``r_l = r_{l-1}[p_l]``. Stage ``l`` depends only on its index, so a
+    longer transform extends a shorter one with the same stages.
+    """
+    if form not in STAGE_FORMS:
+        raise ValueError(f"unknown stage form {form!r}; choose from {STAGE_FORMS}")
+    perms = [make_permutation(kind, dim, i, block_size=block_size, seed=seed) for i in range(num_stages)]
+    if form == "conjugated":
+        for i in range(1, num_stages):
+            perms[i] = perms[i - 1][perms[i]]
+    return torch.stack(perms)
+
+
 def select_columns(layout: BlockLayout, rank: int, rule: str = "spread") -> Tensor:
     """Indices of the ``rank`` identity columns forming ``E`` in the thin factor ``Q E``.
 
@@ -136,7 +161,8 @@ class QuICOrthogonal(nn.Module):
     """Learnable ``Q = S_L ... S_1`` with minimal skew parameters ``theta[L, blocks, n(n-1)/2]``."""
 
     def __init__(self, layout: BlockLayout, num_stages: int = 1, permutation: str = "identity", seed: int = 0,
-                 *, dtype: torch.dtype = torch.float32, device: torch.device | str | None = None) -> None:
+                 *, stage_form: str = "chain", dtype: torch.dtype = torch.float32,
+                 device: torch.device | str | None = None) -> None:
         super().__init__()
         if type(num_stages) is not int or num_stages < 1:
             raise ValueError("num_stages must be a positive integer")
@@ -148,13 +174,26 @@ class QuICOrthogonal(nn.Module):
         self.num_stages = num_stages
         self.permutation = permutation
         self.seed = seed
+        self.stage_form = stage_form
         self.construction_dtype = dtype
+        # Runtime memory option (not part of the config or state): recompute stage activations in
+        # ``checkpoint_segments`` segments during backward instead of storing all of them.
+        self.checkpoint_segments = 0
         self.theta = nn.Parameter(torch.zeros(num_stages, layout.num_blocks, layout.params_per_block,
                                               dtype=dtype, device=device))
-        perms = torch.stack([make_permutation(permutation, layout.dim, i, block_size=layout.block_size, seed=seed)
-                             for i in range(num_stages)])
+        # Both forms run the chain stages ``B_l P_l``; the conjugated form then applies ``R_L^T`` once
+        # (``Q_conj = R_L^T Q_chain``), which is cheaper than conjugating every stage.
+        perms = stage_permutations(permutation, layout.dim, num_stages, block_size=layout.block_size, seed=seed)
         self.register_buffer("perms", perms if device is None else perms.to(device), persistent=False)
         self._identity_perm = [bool(torch.equal(p, torch.arange(layout.dim))) for p in perms]
+        final = None
+        if stage_form == "conjugated":
+            cumulative = stage_permutations(permutation, layout.dim, num_stages, block_size=layout.block_size,
+                                            seed=seed, form="conjugated")[-1]
+            if not torch.equal(cumulative, torch.arange(layout.dim)):
+                final = torch.argsort(cumulative)
+        self.register_buffer("final_perm", final if final is None or device is None else final.to(device),
+                             persistent=False)
         for k in layout.orders:
             if k > 1:
                 self.register_buffer(f"indices_{k}", combinations(layout.base_size, k, device), persistent=False)
@@ -163,7 +202,7 @@ class QuICOrthogonal(nn.Module):
         lay = self.layout
         return (f"dim={lay.dim}, base={lay.base_size}, orders={lay.orders}, block={lay.block_size}, "
                 f"blocks={lay.num_blocks}, remainder={lay.remainder}, stages={self.num_stages}, "
-                f"permutation={self.permutation}")
+                f"permutation={self.permutation}, form={self.stage_form}")
 
     def _apply(self, fn: Any, *args: Any, **kwargs: Any) -> "QuICOrthogonal":
         super()._apply(fn, *args, **kwargs)
@@ -184,18 +223,27 @@ class QuICOrthogonal(nn.Module):
             base = self.bases()
             return [compound_matrix(base, k, indices=getattr(self, f"indices_{k}", None)) for k in self.layout.orders]
 
-    def _block_stage(self, x: Tensor, mats: list[Tensor]) -> Tensor:
+    def stage_blocks(self) -> Tensor:
+        """Full block matrices ``[L, blocks, block_size, block_size]`` = ``C_k1 (+) C_k2 (+) ... (+) I``."""
+        mats = self.stage_matrices()
         lay = self.layout
-        cols = x.shape[1]
+        if len(mats) == 1 and lay.compound_dim == lay.block_size:
+            return mats[0]
+        with torch.autocast(device_type=self.theta.device.type, enabled=False):
+            out = mats[0].new_zeros(self.num_stages, lay.num_blocks, lay.block_size, lay.block_size)
+            start = 0
+            for size, matrix in zip(lay.compound_sizes, mats):
+                out[..., start:start + size, start:start + size] = matrix
+                start += size
+            if start < lay.block_size:
+                out[..., start:, start:] = torch.eye(lay.block_size - start, dtype=out.dtype, device=out.device)
+        return out
+
+    def _block_stage(self, x: Tensor, blocks: Tensor) -> Tensor:
+        lay = self.layout
         covered = lay.num_blocks * lay.block_size
-        head = x[:covered].reshape(lay.num_blocks, lay.block_size, cols)
-        pieces, start = [], 0
-        for size, matrix in zip(lay.compound_sizes, mats):
-            pieces.append(torch.bmm(matrix, head[:, start:start + size]))
-            start += size
-        if start < lay.block_size:
-            pieces.append(head[:, start:])
-        rotated = torch.cat(pieces, dim=1).reshape(covered, cols)
+        head = x[:covered].reshape(lay.num_blocks, lay.block_size, x.shape[1])
+        rotated = torch.bmm(blocks, head).reshape(covered, x.shape[1])
         return torch.cat([rotated, x[covered:]], dim=0) if lay.remainder else rotated
 
     def apply(self, x: Tensor) -> Tensor:
@@ -204,12 +252,22 @@ class QuICOrthogonal(nn.Module):
             raise ValueError(f"expected a ({self.layout.dim}, cols) operand")
         if x.dtype != self.construction_dtype:
             raise TypeError("operand must use the construction dtype")
-        mats = self.stage_matrices()
+        blocks = self.stage_blocks()
+        segments = self.checkpoint_segments
+        if segments and self.num_stages > 1 and torch.is_grad_enabled() and self.theta.requires_grad:
+            size = math.ceil(self.num_stages / min(segments, self.num_stages))
+            for lo in range(0, self.num_stages, size):
+                x = checkpoint(self._run_stages, x, lo, min(self.num_stages, lo + size), blocks, use_reentrant=False)
+        else:
+            x = self._run_stages(x, 0, self.num_stages, blocks)
+        return x if self.final_perm is None else x.index_select(0, self.final_perm)
+
+    def _run_stages(self, x: Tensor, lo: int, hi: int, blocks: Tensor) -> Tensor:
         with torch.autocast(device_type=x.device.type, enabled=False):
-            for stage in range(self.num_stages):
+            for stage in range(lo, hi):
                 if not self._identity_perm[stage]:
                     x = x.index_select(0, self.perms[stage])
-                x = self._block_stage(x, [m[stage] for m in mats])
+                x = self._block_stage(x, blocks[stage])
         return x
 
     def thin(self, selection: Tensor) -> Tensor:

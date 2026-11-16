@@ -1,0 +1,21 @@
+{
+  "description": "Multi-layer pilot (2026-11-12), vision layer with bias: adaptive L as a sweep of from-scratch fits (conjugated stride stages, n=8, K=[1,2], full rank), BF16 storage, train-objective selection; fixed and corrected bias; ASVD/SVD baselines; positive and negative control.",
+  "bias_policies": ["fixed", "corrected"],
+  "svd_ranks": [4, 8, 16, 32, 64, 128, 256, 512],
+  "asvd_ranks": [4, 8, 12, 16, 25, 32, 50, 64, 99, 128, 256, 512],
+  "defaults": {
+    "bias_policy": "fixed",
+    "storage_dtype": "bfloat16",
+    "fit": {"steps": 3000, "lr": 0.03, "eval_every": 100, "max_grad_norm": 1.0, "weight_decay": 0.0, "min_lr_ratio": 0.0, "select_on": "train"}
+  },
+  "experiments": [
+    {"name": "sweep", "rank": "full", "stages_sweep": [4, 8, 16, 32, 64],
+     "left": {"base_size": 8, "orders": [1, 2], "permutation": "stride", "stage_form": "conjugated"}},
+    {"name": "sweep_bc", "bias_policy": "corrected", "rank": "full", "stages_sweep": [4, 8, 16, 32, 64],
+     "left": {"base_size": 8, "orders": [1, 2], "permutation": "stride", "stage_form": "conjugated"}},
+    {"name": "posctl_L4_s0.1", "teacher": "positive_control", "teacher_theta_scale": 0.1, "teacher_seed": 1, "rank": "full",
+     "left": {"base_size": 8, "orders": [1, 2], "num_stages": 4, "permutation": "stride", "stage_form": "conjugated"}},
+    {"name": "negctl_L16", "teacher": "negative_control", "teacher_seed": 1, "rank": "full",
+     "left": {"base_size": 8, "orders": [1, 2], "num_stages": 16, "permutation": "stride", "stage_form": "conjugated"}}
+  ]
+}

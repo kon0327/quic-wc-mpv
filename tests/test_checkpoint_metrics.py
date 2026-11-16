@@ -2,6 +2,7 @@ import json
 
 import pytest
 import torch
+from safetensors.torch import load_file
 from torch.nn import functional as F
 
 from quic_wc import QuICWCConfig, QuICWCLinear, SideConfig
@@ -122,3 +123,47 @@ def test_bias_correction_metrics_agree_between_exact_and_token_paths():
     assert abs(float(F.cosine_similarity(est - b, ref - b, dim=1).mean()) - sampled["cos_no_bias_mean"]) < 1e-10
     fixed = relative_output_error(w_hat, w, stats.second_moment, b, stats.mean)
     assert exact["rel_l2_no_bias"] < fixed["rel_l2_no_bias"]  # correction removes the mean error
+
+
+def test_bf16_storage_matches_rounded_parameters_and_halves_bytes(tmp_path):
+    module = trained_like_module()
+    save_compact(module, tmp_path / "fp32")
+    payload = save_compact(module, tmp_path / "bf16", storage_dtype=torch.bfloat16)
+    assert payload["format_version"] == 2 and payload["storage_dtype"] == "bfloat16"
+    loaded = load_compact(tmp_path / "bf16")
+    assert loaded.left.theta.dtype == torch.float32  # construction stays FP32
+    reference = trained_like_module()
+    reference.load_state_dict(module.state_dict())  # same state, then round theta/sigma by hand
+    with torch.no_grad():
+        reference.left.theta.copy_(module.left.theta.to(torch.bfloat16).float())
+        reference.right.theta.copy_(module.right.theta.to(torch.bfloat16).float())
+        reference.sigma0.copy_(module.sigma().to(torch.bfloat16).float())
+        reference.sigma_gain.fill_(1.0)
+    assert torch.equal(loaded.reconstruct_weight(), reference.reconstruct_weight())
+    u_hat, v_hat = loaded.factors()
+    eye = torch.eye(loaded.rank)
+    assert torch.allclose(u_hat.T @ u_hat, eye, atol=1e-5) and torch.allclose(v_hat.T @ v_hat, eye, atol=1e-5)
+    report = storage_report(module.config, bias=True, storage_dtype="bfloat16")
+    stored = load_file(str(tmp_path / "bf16" / "layer.safetensors"))
+    assert report["tensor_bytes"] == sum(t.numel() * t.element_size() for t in stored.values())
+    counts = report["parameters"]
+    assert report["tensor_bytes"] == 2 * counts["total"]  # theta, sigma and bias all BF16
+    assert artifact_bytes(tmp_path / "bf16")["layer.safetensors"] < artifact_bytes(tmp_path / "fp32")["layer.safetensors"]
+
+
+def test_version1_artifact_still_loads_and_dtype_mismatch_is_rejected(tmp_path):
+    module = trained_like_module()
+    save_compact(module, tmp_path / "v1")
+    manifest_path = tmp_path / "v1" / "quic_wc.json"
+    payload = json.loads(manifest_path.read_text())
+    payload["format_version"] = 1
+    payload.pop("storage_dtype")
+    manifest_path.write_text(json.dumps(payload))
+    loaded = load_compact(tmp_path / "v1")
+    assert torch.allclose(loaded.reconstruct_weight(), module.reconstruct_weight(), atol=1e-6)
+    payload["storage_dtype"] = "bfloat16"  # lie about the stored dtype
+    manifest_path.write_text(json.dumps(payload))
+    with pytest.raises(ValueError):
+        load_compact(tmp_path / "v1")
+    with pytest.raises(ValueError):
+        storage_report(module.config, storage_dtype="float64")  # wider than FP32 construction

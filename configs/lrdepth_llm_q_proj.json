@@ -1,0 +1,14 @@
+{
+  "description": "Depth-scaled learning rate (2026-11-12) on Llama layer 15 q_proj, K=[1,2] r1024: L128 with lr 0.03*sqrt(16/L) (=0.0106) and 0.03*16/L (=0.00375); L64 with lr 0.015. Reference lr 0.03 in llm_l15_q_proj.",
+  "bias_policies": ["fixed"],
+  "defaults": {"bias_policy": "fixed", "storage_dtype": "bfloat16",
+               "fit": {"steps": 3000, "lr": 0.03, "eval_every": 100, "max_grad_norm": 1.0, "weight_decay": 0.0, "min_lr_ratio": 0.0, "select_on": "train"}},
+  "experiments": [
+    {"name": "L128_lr0.0106", "rank": 1024, "fit": {"lr": 0.0106},
+     "left": {"base_size": 8, "orders": [1, 2], "num_stages": 128, "permutation": "stride", "stage_form": "conjugated"}},
+    {"name": "L128_lr0.00375", "rank": 1024, "fit": {"lr": 0.00375},
+     "left": {"base_size": 8, "orders": [1, 2], "num_stages": 128, "permutation": "stride", "stage_form": "conjugated"}},
+    {"name": "L64_lr0.015", "rank": 1024, "fit": {"lr": 0.015},
+     "left": {"base_size": 8, "orders": [1, 2], "num_stages": 64, "permutation": "stride", "stage_form": "conjugated"}}
+  ]
+}

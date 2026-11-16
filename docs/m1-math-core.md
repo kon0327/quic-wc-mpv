@@ -160,3 +160,32 @@ Numerický report `artifacts/m1/diagnostics-cuda.json` (lokální, ignorovaný a
   s `θ` zaokrouhleným na BF16.
 - Optimalizace z identity nedosáhne učitele ze stejné rodiny při větších rotacích (pozitivní kontrola
   pilotu, oddíl 5 reportu). Jde o omezení optimalizace, které je nutné odlišovat od kapacity struktury.
+
+## 10. Doplněk 12. 11. 2026 (večer): úložný dtype, konjugovaný tvar, růst stupňů
+
+Rozhodnutí uživatele: pokračovat vícestupňovou variantou s permutacemi, `L` volit adaptivně pro každou vrstvu,
+srovnávat s ASVD (audit [2026-11-12-bf16-gate-optim-multilayer.md](../audit/2026-11-12-bf16-gate-optim-multilayer.md)).
+
+- **Úložný dtype (formát v2, `checkpoint.py`).** `save_compact(..., storage_dtype="bfloat16")` uloží `θ` a `σ`
+  v BF16; manifest nese `storage_dtype`. Při načtení se přesně převedou na FP32 a faktory se staví v FP32, takže
+  zůstávají ortonormální (zaokrouhlení mění jen to, *která* ortogonální matice vznikne, ne ortogonalitu).
+  `storage_report(..., storage_dtype=...)` počítá bajty. Artefakty v1 se načtou dál. Bod 9 („θ ve FP32“) tím
+  přestává být omezením formátu.
+- **Konjugovaný tvar stupně (`SideConfig.stage_form`).** `"chain"`: `Q = B_L P_L ⋯ B_2 P_2 B_1`.
+  `"conjugated"`: `Q = Π_l R_lᵀ B_l R_l` s kumulativními permutacemi `R_l = P_l ⋯ P_1`. Z
+  `B_L P_L ⋯ B_1 = R_L · Π (R_lᵀ B_l R_l)` plyne `Q_conj = R_Lᵀ Q_chain` — stejná rodina až na pevnou permutaci
+  řádků; implementace proto spočte chain a na konci jednou aplikuje `R_Lᵀ`. Jen konjugovaný tvar má `Q = I` při
+  `θ = 0` pro každé `L`.
+- **Růst stupňů (`growth.py`).** `grow_stages` přidá nulové stupně na konec součinu; v konjugovaném tvaru se
+  rekonstruovaná váha nezmění a nové parametry mají nenulový gradient. Fitovaná vrstva prochází velikostmi
+  `L_1 < L_2 < …` a každá velikost je nasaditelný artefakt — jeden běh dá celou křivku chyba/bajty, ze které se
+  volí `L` pro vrstvu. `perturb_` slouží k náhodným restartům.
+- **Implementace stupně.** Bloky `C_k1 ⊕ C_k2 ⊕ … ⊕ I` se skládají do jedné matice `[L, bloky, b, b]`
+  (`stage_blocks`) a stupeň je jeden `gather` + jeden `bmm` (+ kopie zbytku). Volitelný gradient checkpointing po
+  segmentech stupňů (`QuICWCLinear.set_checkpointing`) přepočítává aktivace při zpětném průchodu; výsledek se
+  nemění (test shody gradientů), šetří paměť u velkých vrstev.
+- **Výběr kroku.** `FitConfig.select_on = "train"` vybírá nejlepší stav podle trénovacího cíle, takže validace
+  nevstupuje do žádné volby.
+- **Testy:** 71 (z toho nové: BF16 export a zpětná kompatibilita, rovnost chain/conjugated vůči dense referenci,
+  identita při `θ = 0`, zachování váhy při růstu, checkpointing, runner s BF16/růstem/restarty a vrstvou bez
+  biasu).

@@ -109,21 +109,26 @@ class Preprocessor:
                                                   "normalize": self.normalize},
                             "model_dtype": "bfloat16"}
 
-    def __call__(self, jpeg_bytes: list[bytes]) -> torch.Tensor:
+    def pil_image(self, data: bytes):
+        """TF part of the LIBERO evaluation pipeline: JPEG -> lanczos3 224 -> center crop 0.9 -> PIL."""
         from PIL import Image
 
-        tf, TVF = self.tf, self.TVF
+        tf = self.tf
+        img = tf.io.decode_jpeg(data, channels=3)
+        img = tf.image.resize(img, (224, 224), method="lanczos3", antialias=True)
+        img = tf.cast(tf.clip_by_value(tf.round(img), 0, 255), tf.uint8)
+        img = tf.image.convert_image_dtype(img, tf.float32)
+        side = float(0.9 ** 0.5)
+        off = (1.0 - side) / 2
+        img = tf.image.crop_and_resize(img[None], [[off, off, off + side, off + side]], [0], (224, 224))[0]
+        img = tf.image.convert_image_dtype(tf.clip_by_value(img, 0, 1), tf.uint8, saturate=True)
+        return Image.fromarray(img.numpy()).convert("RGB")
+
+    def __call__(self, jpeg_bytes: list[bytes]) -> torch.Tensor:
+        TVF = self.TVF
         out = []
         for data in jpeg_bytes:
-            img = tf.io.decode_jpeg(data, channels=3)
-            img = tf.image.resize(img, (224, 224), method="lanczos3", antialias=True)
-            img = tf.cast(tf.clip_by_value(tf.round(img), 0, 255), tf.uint8)
-            img = tf.image.convert_image_dtype(img, tf.float32)
-            side = float(0.9 ** 0.5)
-            off = (1.0 - side) / 2
-            img = tf.image.crop_and_resize(img[None], [[off, off, off + side, off + side]], [0], (224, 224))[0]
-            img = tf.image.convert_image_dtype(tf.clip_by_value(img, 0, 1), tf.uint8, saturate=True)
-            pil = Image.fromarray(img.numpy()).convert("RGB")
+            pil = self.pil_image(data)
             pil = TVF.resize(pil, **self.resize)
             pil = TVF.center_crop(pil, **self.crop)
             out.append(TVF.normalize(TVF.to_tensor(pil), **self.normalize))

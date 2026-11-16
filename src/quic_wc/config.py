@@ -14,12 +14,12 @@ from typing import Any, Mapping
 
 import torch
 
-from .math.orthogonal import PERMUTATIONS, SELECTIONS, BlockLayout, validate_orders
+from .math.orthogonal import PERMUTATIONS, SELECTIONS, STAGE_FORMS, BlockLayout, validate_orders
 
 CONSTRUCTION_DTYPES = {"float32": torch.float32, "float64": torch.float64}
 SIGMA_MODES = ("fixed", "learnable")
 CAYLEY_CONVENTION = "A=(I-S)(I+S)^-1, S strictly-upper minimal coordinates"
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -30,11 +30,14 @@ class SideConfig:
     num_stages: int = 1
     permutation: str = "identity"
     seed: int = 0
+    stage_form: str = "chain"
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "orders", validate_orders(self.orders))
         if self.permutation not in PERMUTATIONS:
             raise ValueError(f"permutation must be one of {PERMUTATIONS}")
+        if self.stage_form not in STAGE_FORMS:
+            raise ValueError(f"stage_form must be one of {STAGE_FORMS}")
         if type(self.num_stages) is not int or self.num_stages < 1:
             raise ValueError("num_stages must be a positive integer")
         if type(self.seed) is not int:

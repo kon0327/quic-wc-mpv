@@ -20,3 +20,4 @@ Každý záznam podle potřeby obsahuje:
 - [Zavedení auditování](2026-10-01-audit-convention.md) — zavedení pravidla a doplnění předchozích záznamů.
 - [Analýza projektu pro paměť agenta](2026-11-12-agent-memory.md) — read-only analýza, paměť mimo repozitář.
 - [Matematické jádro M1 a první pilot](2026-11-12-m1-core-pilot.md) — implementace `src/quic_wc`, testy, pilot na DINOv2 fc1 (LIBERO-10), chyba cache ASVD a její oprava, test posunu domény.
+- [Export BF16, brána M3, optimalizace a pilot na čtyřech vrstvách](2026-11-12-bf16-gate-optim-multilayer.md) — formát v2, nová brána M3, LR škálovaný hloubkou, kalibrace z celého modelu, DINOv2/SigLIP/Llama q_proj a down_proj.

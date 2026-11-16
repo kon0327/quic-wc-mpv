@@ -38,9 +38,9 @@ class QuICWCLinear(nn.Module):
         device = sigma.device if device is None else torch.device(device)
         lc, rc = config.left, config.right
         self.left = QuICOrthogonal(lc.layout(self.out_features), lc.num_stages, lc.permutation, lc.seed,
-                                   dtype=dtype, device=device)
+                                   stage_form=lc.stage_form, dtype=dtype, device=device)
         self.right = QuICOrthogonal(rc.layout(self.in_features), rc.num_stages, rc.permutation, rc.seed,
-                                    dtype=dtype, device=device)
+                                    stage_form=rc.stage_form, dtype=dtype, device=device)
         self.register_buffer("selection_out", select_columns(self.left.layout, self.rank, config.selection).to(device),
                              persistent=False)
         self.register_buffer("selection_in", select_columns(self.right.layout, self.rank, config.selection).to(device),
@@ -75,6 +75,13 @@ class QuICWCLinear(nn.Module):
     def extra_repr(self) -> str:
         return (f"in_features={self.in_features}, out_features={self.out_features}, rank={self.rank}, "
                 f"sigma_mode={self.config.sigma_mode}, bias={self.bias is not None}")
+
+    def set_checkpointing(self, segments: int) -> "QuICWCLinear":
+        """Recompute stage activations in ``segments`` segments per side during backward (0 = off)."""
+        if type(segments) is not int or segments < 0:
+            raise ValueError("segments must be a non-negative integer")
+        self.left.checkpoint_segments = self.right.checkpoint_segments = segments
+        return self
 
     # ----- reconstruction ---------------------------------------------------------------------
     def sigma(self) -> Tensor:
