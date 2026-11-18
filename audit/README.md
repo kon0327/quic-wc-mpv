@@ -22,3 +22,4 @@ Každý záznam podle potřeby obsahuje:
 - [Matematické jádro M1 a první pilot](2026-11-12-m1-core-pilot.md) — implementace `src/quic_wc`, testy, pilot na DINOv2 fc1 (LIBERO-10), chyba cache ASVD a její oprava, test posunu domény.
 - [Export BF16, brána M3, optimalizace a pilot na čtyřech vrstvách](2026-11-12-bf16-gate-optim-multilayer.md) — formát v2, nová brána M3, LR škálovaný hloubkou, kalibrace z celého modelu, DINOv2/SigLIP/Llama q_proj a down_proj.
 - [Compound řády proti prostým blokům](2026-11-16-compound-orders.md) — rozhodovací experiment K=[1,2] vs K=[1] (stejné bajty i stejný výpočet) a K=[1,2,3] před M4-lite.
+- [M4-lite](2026-11-18-m4-lite.md) — komprimované vrstvy v celém OpenVLA: akční tokeny, KL logitů, in-situ chyba vrstvy; QuIC-WC vs ASVD.

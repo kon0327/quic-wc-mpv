@@ -312,3 +312,21 @@ bajty: K=[1] potřebuje o 5–30 % víc bajtů).
 
 Obě větve mění kritéria M5 (latence ≤ 1.05× husté baseline platí pro rozbalení předem); u nich se vykáže
 kompromis paměť × latence a kritéria se stanoví před měřením. Možná je i kombinace po vrstvách.
+
+## 13. Aktualizace — 18. 11. 2026: M4-lite
+
+Provedeno: komprimované vrstvy v celém OpenVLA (4 vrstvy, 62 variant, 268 validačních snímků), report
+[docs/m4-lite-2026-11-18.md](../docs/m4-lite-2026-11-18.md), audit
+[audit/2026-11-18-m4-lite.md](../audit/2026-11-18-m4-lite.md). Naměřeno: vrstvová relL2 = chyba v modelu; citlivost
+vrstev se liší o řády (SigLIP b13 fc1 bez vlivu, DINOv2 b0 fc1 citlivá, Llama down_proj při ≤ 3.3 % bajtů
+nepoužitelná); QuIC-WC poráží ASVD při stejných bajtech i ve shodě akčních tokenů (DINOv2 při 1.6 %: 97.1 % vs
+82.8 %).
+
+Navrženo (k rozhodnutí): absolutní kritérium brány M3 v KL na akčních pozicích (pracovně ≤ 0.01 pro jednu vrstvu,
+pro skupiny rozpočet KL na skupinu); další krok = komprese celé skupiny vrstev (např. MLP DINOv2) a měření skládání
+chyb a úspory na úrovni modelu, poté M4 (export, cold load) a M5; po M4 větve komprese za běhu (oddíl 12).
+
+**Rozhodnutí uživatele 18. 11. 2026:** (1) absolutní kritérium brány M3 se formuluje v KL na akčních pozicích
+(teacher forcing) pro **skupiny souvisejících vrstev** (např. MLP jednoho vizuálního enkodéru, attention / MLP Llamy)
+**i pro model jako celek**; konkrétní prahy se stanoví z měření skládání chyb ve skupině. (2) Další krok: komprese
+celé skupiny vrstev (MLP DINOv2) a měření skládání a úspory na úrovni modelu. (3) Commit práce z 16. a 18. 11.
