@@ -156,6 +156,11 @@ K=[1] má 4.5× víc parametrů na stupeň, proto 7/14/28 stupňů odpovídá ba
 K=[1,2] je o 0.5–3.6 % lepší, za cenu 1.8–7.2× delšího tréninku. V prvním pilotu na DINOv2 (LR 0.03) byly řády
 bez rozdílu. Obě varianty porážejí ASVD.
 
+**Doplnění 2026-11-16 (přepočet na bajty, interpretace):** na plochých křivkách Llamy odpovídá malý rozdíl chyby
+velkému rozdílu velikosti. Log-log interpolací po křivce K=[1,2] potřebuje K=[1] na stejnou chybu o 30 / 12 / 9 %
+(q_proj) a 27 / 8 / 5 % (down_proj) víc bajtů, nejvíc při malém rozpočtu. Formulace „rovnocenné“ v bodě 6 shrnutí
+je proto příliš silná. Srovnání při stejném výpočetním rozpočtu a s více semeny zatím chybí.
+
 ## 8. Kontroly
 
 | vrstva | pozitivní kontrola (θ·0.1) | negativní kontrola L16 (ASVD ≥B) |

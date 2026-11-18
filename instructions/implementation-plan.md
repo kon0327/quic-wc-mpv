@@ -286,3 +286,29 @@ artefakty QuIC-WC a měřit vliv na výstup featurizeru / LLM a shodu akčních 
 tokenů s datasetem); z toho odvodit cílovou chybu na vrstvu a doplnit bránu o absolutní kvalitu; (2) rozhodnout
 o roli compound řádů (viz report: na q_proj je K=[1] při stejných bajtech rovnocenné a 4–7× rychlejší);
 (3) delší trénink a dotrénování po zaokrouhlení do BF16 pro vybrané vrstvy; (4) M5 rollouty až po M4-lite.
+
+## 12. Aktualizace — 16. 11. 2026: compound řády a úspora paměti za běhu
+
+**Compound řády (rozhodnutí uživatele; dokončeno 16. 11. 13:50 — kritérium splněno, K=[1,2] zůstává hlavní
+variantou; K=[1,2] šetří proti K=[1] se stejným výpočtem 19–39 % bajtů při silné kompresi, kolem 5 % bajtů rozdíl
+mizí; K=[1,2,3] +1.4–4.9 % za 3.6–4.9× delší trénink):** před M4-lite rozhodovací experiment K=[1,2] vs K=[1] (stejné
+bajty i stejný výpočet) a K=[1,2,3] na SigLIP b13 fc1 a Llama L15 q_proj; kritérium stanovené předem a výsledky
+v [audit/2026-11-16-compound-orders.md](../audit/2026-11-16-compound-orders.md). M4-lite poběží s konfigurací,
+kterou experiment potvrdí. Poznámka k bodu (2) oddílu 11: formulace „rovnocenné“ byla příliš silná (přepočet na
+bajty: K=[1] potřebuje o 5–30 % víc bajtů).
+
+**Úspora GPU paměti (rozhodnutí uživatele, plánováno po M4, neprovedeno):** MVP dál cílí na velikost checkpointu
+(oddíl 1). Po M4 se experimentálně porovnají dvě větve, které mají snížit i ustálenou paměť vah:
+
+1. **Rozbalení vrstvy těsně před použitím** — na GPU zůstávají jen kompaktní parametry (θ, σ, bias, permutace),
+   hustá `Ŵ` vzniká pro jednu vrstvu (nebo blok vrstev) v pre-forward hooku a po použití se uvolní. Měřit: peak
+   a ustálenou VRAM, latenci akce (OpenVLA volá LLM 7× na akci, rozbalení se tedy opakuje při každém kroku
+   dekódování), čas rozbalení vrstvy, vliv velikosti bloku vrstev a případného cachování v rámci jedné akce.
+2. **Výpočet ve faktorizované podobě** — `y = Q_out diag(σ) (Q_inᵀ x) + b` bez husté matice: stupně (blokové
+   násobení + permutace) aplikované přímo na aktivace. Měřit: VRAM, latenci a FLOPs proti `F.linear`, číselnou
+   shodu s rozbalenou vahou; nejprve implementace v PyTorch (`bmm` + `index_select`), při nadějných číslech
+   vlastní kernel (Triton) se sloučenými stupni. Hrubý odhad pro 4096×4096 a L=64: FLOPs srovnatelné s hustým
+   násobením, ale stovky malých sekvenčních operací.
+
+Obě větve mění kritéria M5 (latence ≤ 1.05× husté baseline platí pro rozbalení předem); u nich se vykáže
+kompromis paměť × latence a kritéria se stanoví před měřením. Možná je i kombinace po vrstvách.

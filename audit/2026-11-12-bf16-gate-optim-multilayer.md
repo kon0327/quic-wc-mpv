@@ -284,3 +284,18 @@ na vrstvě. Výhoda nevzniká z compound matic ani ze struktury reálných vah (
 - Jedna vrstva z každého typu, jedno semeno, jedna sada dat; delší trénink neproveden v receptu v2.
 - `down_proj` grid v1 zastaven po L16 (záměrně, viz bod 10).
 - M4 a M5 nezahájeny.
+
+## Doplnění 2026-11-16: přepočet K=[1] vs K=[1,2] na bajty (oprava interpretace)
+
+- Podnět: dotaz uživatele, zda má QuIC smysl, když compound řády přidávají jen 0.5–3.6 % chyby.
+- Provedeno (bez nových běhů, jen přepočet čísel z tabulky oddílu 7 reportu): pro každý bod K=[1] jsem log-log
+  interpolací na křivce K=[1,2] (L16–L128) určil, kolik bajtů potřebuje K=[1,2] na stejnou chybu.
+- Výsledek (interpretace z jednoho semene, interpolace mezi body): K=[1] potřebuje na stejnou chybu o
+  **30 / 12 / 9 %** (q_proj, poměr bajtů 0.012 / 0.024 / 0.048) a **27 / 8 / 5 %** (down_proj, 0.008 / 0.016 /
+  0.033) víc bajtů než K=[1,2]. Malý rozdíl v chybě je na plochých křivkách Llamy (relL2 ∝ bajty^−0.05…0.2)
+  podstatný rozdíl ve velikosti, hlavně při malém rozpočtu.
+- Oprava: formulace „téměř nic nepřidávají“ / „rovnocenné“ (souhrn v odpovědi uživateli 2026-11-12, report bod 6)
+  byla příliš silná. Platí: obě varianty porážejí ASVD; compound řády přidávají měřitelnou úsporu 5–30 % bajtů,
+  K=[1] je 1.8–7.2× rychlejší v tréninku (offline náklad; nasazení obě rekonstruují stejně velkou hustou matici).
+- Neověřeno: srovnání při stejném výpočetním rozpočtu (K=[1] s víc kroky), více semen, K=[1,2,3]; navrženo
+  uživateli jako rozhodovací experiment, nespuštěno.
