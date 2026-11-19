@@ -82,6 +82,53 @@ def plan(args: argparse.Namespace) -> None:
     print(f"{len(variants)} variants -> {args.out}")
 
 
+def group_plan(args: argparse.Namespace) -> None:
+    """Whole group of layers (one results directory per layer) at a common ``L`` per variant, QuIC-WC and the
+    equal-byte ASVD of every layer; optional subgroups (name substrings) and tf-only single-layer variants
+    (additivity of the teacher-forced KL)."""
+    layers = []
+    for directory in args.results:
+        res = json.loads((directory / "results.json").read_text())
+        entries = {e["stages"][0]: e for e in res["quic_wc"]
+                   if e["teacher"]["kind"] == "real" and e.get("family") == args.family}
+        layers.append((res["layer"]["name"], res["calibration"], directory, entries))
+
+    def reps(stages: int, kind: str, names: list[str] | None = None) -> list[dict[str, Any]]:
+        out = []
+        for layer, cal, directory, entries in layers:
+            if names is not None and layer not in names:
+                continue
+            e = entries[stages]
+            if kind == "quic":
+                out.append({"layer": layer, "kind": "quic", "artifact": str(directory / "artifacts" / e["name"]),
+                            "calibration": cal, "policy": e["bias_policy"], "byte_ratio": e["byte_ratio"],
+                            "pilot_rel_l2": e["metrics"][METRIC], "stages": e["stages"]})
+            else:
+                ref = e["equal_budget"]["asvd_r_bytes_ceil"]
+                out.append({"layer": layer, "kind": "asvd", "rank": ref["rank"], "calibration": cal,
+                            "policy": e["bias_policy"], "byte_ratio": ref["byte_ratio"],
+                            "pilot_rel_l2": ref["metrics"][METRIC]})
+        return out
+
+    variants: list[dict[str, Any]] = [{"name": "reference", "replacements": []}]
+    for stages in args.stages:
+        for kind in ("quic", "asvd"):
+            variants.append({"name": f"{args.tag}:{kind}:L{stages}", "replacements": reps(stages, kind)})
+    for sub in args.subgroups:
+        names = [layer for layer, *_ in layers if sub in layer]
+        for stages in args.subgroup_stages:
+            for kind in ("quic", "asvd"):
+                variants.append({"name": f"{args.tag}[{sub}]:{kind}:L{stages}", "replacements": reps(stages, kind, names)})
+    for stages in args.single_stages:
+        for layer, *_ in layers:
+            variants.append({"name": f"{short_name(layer)}:quic:L{stages}", "tf_only": True,
+                             "replacements": reps(stages, "quic", [layer])})
+    variants.append({"name": "reference_end", "replacements": []})
+    args.out.write_text(json.dumps({"created": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                                    "sources": [str(d) for d in args.results], "variants": variants}, indent=2) + "\n")
+    print(f"{len(variants)} variants -> {args.out}")
+
+
 # ----------------------------------------------------------------------------------------------------------
 # replacements
 # ----------------------------------------------------------------------------------------------------------
@@ -206,8 +253,11 @@ def normalized_actions(tokens: torch.Tensor, vla) -> torch.Tensor:
 
 
 def evaluate(vla, frames: list[dict[str, Any]], unnorm_key: str, action_dim: int, swap: Swap,
-             reference: dict[str, Any] | None) -> tuple[dict[str, Any], dict[str, torch.Tensor]]:
+             reference: dict[str, Any] | None, tf_only: bool = False) -> tuple[dict[str, Any], dict[str, torch.Tensor]]:
+    """``tf_only`` skips greedy decoding (teacher-forced KL/top-1 and in-situ error only; needs a reference)."""
     t0 = time.perf_counter()
+    if tf_only and reference is None:
+        raise ValueError("tf_only needs the reference tokens")
     generated: list[torch.Tensor] = []
     original_generate = vla.generate
 
@@ -219,13 +269,13 @@ def evaluate(vla, frames: list[dict[str, Any]], unnorm_key: str, action_dim: int
     vla.generate = recording_generate
     try:
         with torch.inference_mode():
-            for f in frames:
+            for f in ([] if tf_only else frames):
                 vla.predict_action(input_ids=f["input_ids"].cuda(), attention_mask=f["attention_mask"].cuda(),
                                    pixel_values=f["pixel_values"].cuda(), unnorm_key=unnorm_key, do_sample=False)
     finally:
         vla.generate = original_generate
     t_free = time.perf_counter() - t0
-    tokens = torch.stack(generated)
+    tokens = None if tf_only else torch.stack(generated)
     ref_tokens = tokens if reference is None else reference["tokens"]
     # Teacher forcing on the reference tokens; the in-situ monitors see exactly prefill + 6 decode tokens.
     for m in swap.monitors.values():
@@ -250,6 +300,12 @@ def evaluate(vla, frames: list[dict[str, Any]], unnorm_key: str, action_dim: int
     if reference is not None:
         ref_lp = reference["logp"]
         kl = (ref_lp.exp() * (ref_lp - logp_t)).sum(-1)  # [frames, 7]
+        metrics |= {"tf_top1_agree_ref": float((argmax_t == ref_tokens).float().mean()),
+                    "tf_kl_mean": float(kl.mean()), "tf_kl_median": float(kl.median()),
+                    "tf_kl_p95": float(kl.flatten().quantile(0.95)), "tf_kl_max": float(kl.max())}
+    if tf_only:
+        return metrics, {"logp": logp_t, "tf_argmax": argmax_t, "tf_kl": kl}
+    if reference is not None:
         same = tokens == ref_tokens
         a_var, a_ref = normalized_actions(tokens, vla), reference["norm_actions"]
         metrics |= {
@@ -257,12 +313,10 @@ def evaluate(vla, frames: list[dict[str, Any]], unnorm_key: str, action_dim: int
             "free_token_agree_ref_per_dim": same.float().mean(0).tolist(),
             "free_norm_action_abs_diff": float((a_var - a_ref).abs().mean()),
             "free_gripper_flip_rate": float((torch.sign(a_var[:, -1]) != torch.sign(a_ref[:, -1])).float().mean()),
-            "tf_top1_agree_ref": float((argmax_t == ref_tokens).float().mean()),
-            "tf_kl_mean": float(kl.mean()), "tf_kl_median": float(kl.median()),
-            "tf_kl_p95": float(kl.flatten().quantile(0.95)), "tf_kl_max": float(kl.max()),
         }
     metrics["free_token_agree_dataset"] = float((tokens == frames_dataset_tokens(frames)).float().mean())
-    return metrics, {"tokens": tokens, "logp": logp_t, "tf_argmax": argmax_t}
+    return metrics, {"tokens": tokens, "logp": logp_t, "tf_argmax": argmax_t,
+                     "tf_kl": kl if reference is not None else torch.zeros(argmax_t.shape)}
 
 
 def frames_dataset_tokens(frames: list[dict[str, Any]]) -> torch.Tensor:
@@ -353,7 +407,7 @@ def run(args: argparse.Namespace) -> None:
     for v in variants:
         with Swap(vla, v["replacements"], asvd) as swap:
             metrics, data = evaluate(vla, frames, unnorm_key, action_dim, swap,
-                                     None if v["name"] == "reference" else reference)
+                                     None if v["name"] == "reference" else reference, v.get("tf_only", False))
         if v["name"] == "reference":
             reference = {"tokens": data["tokens"], "logp": data["logp"],
                          "norm_actions": normalized_actions(data["tokens"], vla)}
@@ -363,7 +417,7 @@ def run(args: argparse.Namespace) -> None:
         for r in v["replacements"]:
             if r["kind"] == "asvd":
                 r["check_rel_l2"] = float(asvd[(r["layer"], r["rank"], r["policy"])]["check_rel_l2"])
-        save_file({"tokens": data["tokens"], "tf_argmax": data["tf_argmax"]},
+        save_file({k: data[k] for k in ("tokens", "tf_argmax", "tf_kl") if data.get(k) is not None},
                   str(args.out / "tokens" / f"{v['name'].replace(':', '__')}.safetensors"))
         results["variants"].append({"name": v["name"], "replacements": v["replacements"], "metrics": metrics})
         short = {k: (round(x, 4) if isinstance(x, float) else x) for k, x in metrics.items()
@@ -392,9 +446,15 @@ def markdown(results: dict[str, Any]) -> str:
 
     for v in results["variants"]:
         m, reps = v["metrics"], v["replacements"]
-        ratio = "; ".join(f"{r['byte_ratio']:.4f}" for r in reps) or "1"
-        pilot = "; ".join(f"{r['pilot_rel_l2']:.4f}" for r in reps) or "—"
-        insitu = "; ".join(f"{x:.4f}" for x in m["in_situ_rel_l2"].values()) or "—"
+        if len(reps) > 4:  # groups: mean over layers (and max of the in-situ error)
+            ins = list(m["in_situ_rel_l2"].values())
+            ratio = f"{len(reps)} vrstev, ⌀ {np.mean([r['byte_ratio'] for r in reps]):.4f}"
+            pilot = f"⌀ {np.mean([r['pilot_rel_l2'] for r in reps]):.4f}"
+            insitu = f"⌀ {np.mean(ins):.4f}, max {np.max(ins):.4f}"
+        else:
+            ratio = "; ".join(f"{r['byte_ratio']:.4f}" for r in reps) or "1"
+            pilot = "; ".join(f"{r['pilot_rel_l2']:.4f}" for r in reps) or "—"
+            insitu = "; ".join(f"{x:.4f}" for x in m["in_situ_rel_l2"].values()) or "—"
         lines.append(f"| {v['name']} | {ratio} | {pilot} | {insitu} | {f(m.get('tf_top1_agree_ref'))} | "
                      f"{f(m.get('tf_kl_mean'), 5)} | {f(m.get('tf_kl_p95'), 5)} | {f(m.get('free_token_agree_ref'))} | "
                      f"{f(m.get('free_all7_agree_ref'))} | {f(m.get('free_token_agree_dataset'))} | "
@@ -409,6 +469,15 @@ def main() -> None:
     p.add_argument("--results", type=Path, nargs="+", required=True)
     p.add_argument("--families", nargs="+", default=["sweep", "sweep_bc", "sweep_r1024"])
     p.add_argument("--out", type=Path, required=True)
+    g = sub.add_parser("group-plan")
+    g.add_argument("--results", type=Path, nargs="+", required=True)
+    g.add_argument("--family", default="sweep_bc")
+    g.add_argument("--tag", default="group")
+    g.add_argument("--stages", type=int, nargs="+", required=True)
+    g.add_argument("--subgroups", nargs="*", default=[])
+    g.add_argument("--subgroup-stages", type=int, nargs="*", default=[])
+    g.add_argument("--single-stages", type=int, nargs="*", default=[])
+    g.add_argument("--out", type=Path, required=True)
     r = sub.add_parser("run")
     r.add_argument("--checkpoint", type=Path, required=True)
     r.add_argument("--dataset", type=Path, required=True)
@@ -417,7 +486,7 @@ def main() -> None:
     r.add_argument("--only", nargs="*", default=None, help="run only these variants (plus the references)")
     r.add_argument("--max-frames", type=int, default=0, help="use only the first N validation frames (smoke test)")
     args = parser.parse_args()
-    plan(args) if args.command == "plan" else run(args)
+    {"plan": plan, "group-plan": group_plan, "run": run}[args.command](args)
 
 
 if __name__ == "__main__":

@@ -330,3 +330,26 @@ chyb a úspory na úrovni modelu, poté M4 (export, cold load) a M5; po M4 větv
 (teacher forcing) pro **skupiny souvisejících vrstev** (např. MLP jednoho vizuálního enkodéru, attention / MLP Llamy)
 **i pro model jako celek**; konkrétní prahy se stanoví z měření skládání chyb ve skupině. (2) Další krok: komprese
 celé skupiny vrstev (MLP DINOv2) a měření skládání a úspory na úrovni modelu. (3) Commit práce z 16. a 18. 11.
+
+## 14. Aktualizace — 18. 11. 2026: skupina MLP DINOv2
+
+Provedeno: komprese všech 48 MLP vrstev DINOv2 (fity L8/16/32, vyhodnocení skupiny, podskupin fc1/fc2 a 48
+jednovrstvých variant). Report [docs/group-dinov2-mlp-2026-11-18.md](../docs/group-dinov2-mlp-2026-11-18.md), audit
+[audit/2026-11-18-group-dinov2-mlp.md](../audit/2026-11-18-group-dinov2-mlp.md).
+
+Naměřeno:
+- Při jednotném rozpočtu 0.8–3.1 % se model rozpadne u obou metod: KL 9.9–15.5, shoda tokenů 11–28 %.
+- KL skupiny je 14–32× vyšší než součet jednovrstvých KL a po snímcích s ním nekoreluje.
+- In-situ chyba vrstev ve skupině roste (fc1 ⌀ 0.54 → 0.75).
+- Po vrstvách potřebuje QuIC-WC při stejné relL2 o 36–47 % (fc1) a 63–72 % (fc2) méně bajtů než ASVD, na všech
+  vrstvách.
+- Váhy MLP DINOv2 tvoří jen 2.67 % parametrů modelu.
+
+Důsledek pro bránu M3: skupinové prahy KL nelze odvodit z jednovrstvých měření, musí se měřit přímo na skupině.
+Rozpočet, který práh splní, zatím není znám.
+
+Navrženo (k rozhodnutí):
+- sekvenční kalibrace;
+- větší rozpočty nebo menší skupiny;
+- doladění na KL výstupu;
+- skupinový test SigLIP.

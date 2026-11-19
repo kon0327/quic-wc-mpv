@@ -1,0 +1,52 @@
+{
+  "description": "Group experiment 2026-11-18: all 48 DINOv2 MLP layers (fc1, fc2 of 24 blocks), recipe v2 (conjugated stride, n=8, K=[1,2], BF16, 3000 steps, depth-scaled LR), corrected bias (best variant in M4-lite), full rank, from-scratch sweep L = 8/16/32 per layer.",
+  "bias_policies": [
+    "corrected"
+  ],
+  "svd_ranks": [],
+  "asvd_ranks": [
+    4,
+    8,
+    16,
+    32,
+    64
+  ],
+  "defaults": {
+    "bias_policy": "corrected",
+    "storage_dtype": "bfloat16",
+    "fit": {
+      "steps": 3000,
+      "lr": 0.03,
+      "eval_every": 100,
+      "max_grad_norm": 1.0,
+      "weight_decay": 0.0,
+      "min_lr_ratio": 0.0,
+      "select_on": "train"
+    },
+    "lr_depth_scaling": {
+      "reference_stages": 16,
+      "power": 0.5
+    }
+  },
+  "experiments": [
+    {
+      "name": "sweep_bc",
+      "bias_policy": "corrected",
+      "rank": "full",
+      "stages_sweep": [
+        8,
+        16,
+        32
+      ],
+      "left": {
+        "base_size": 8,
+        "orders": [
+          1,
+          2
+        ],
+        "permutation": "stride",
+        "stage_form": "conjugated"
+      }
+    }
+  ]
+}

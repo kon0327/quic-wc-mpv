@@ -23,3 +23,4 @@ Každý záznam podle potřeby obsahuje:
 - [Export BF16, brána M3, optimalizace a pilot na čtyřech vrstvách](2026-11-12-bf16-gate-optim-multilayer.md) — formát v2, nová brána M3, LR škálovaný hloubkou, kalibrace z celého modelu, DINOv2/SigLIP/Llama q_proj a down_proj.
 - [Compound řády proti prostým blokům](2026-11-16-compound-orders.md) — rozhodovací experiment K=[1,2] vs K=[1] (stejné bajty i stejný výpočet) a K=[1,2,3] před M4-lite.
 - [M4-lite](2026-11-18-m4-lite.md) — komprimované vrstvy v celém OpenVLA: akční tokeny, KL logitů, in-situ chyba vrstvy; QuIC-WC vs ASVD.
+- [Skupina MLP DINOv2](2026-11-18-group-dinov2-mlp.md) — 48 MLP vrstev DINOv2: při 1–3 % bajtů kolaps obou metod (KL 10–15), KL 14–32× nadaditivní; po vrstvách QuIC-WC potřebuje při stejné relL2 o 36–72 % méně bajtů než ASVD.
