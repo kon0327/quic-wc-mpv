@@ -24,3 +24,5 @@ Každý záznam podle potřeby obsahuje:
 - [Compound řády proti prostým blokům](2026-11-16-compound-orders.md) — rozhodovací experiment K=[1,2] vs K=[1] (stejné bajty i stejný výpočet) a K=[1,2,3] před M4-lite.
 - [M4-lite](2026-11-18-m4-lite.md) — komprimované vrstvy v celém OpenVLA: akční tokeny, KL logitů, in-situ chyba vrstvy; QuIC-WC vs ASVD.
 - [Skupina MLP DINOv2](2026-11-18-group-dinov2-mlp.md) — 48 MLP vrstev DINOv2: při 1–3 % bajtů kolaps obou metod (KL 10–15), KL 14–32× nadaditivní; po vrstvách QuIC-WC potřebuje při stejné relL2 o 36–72 % méně bajtů než ASVD.
+- [Sekvenční kalibrace MLP DINOv2](2026-11-19-sequential-calibration.md) — postupná kalibrace s cílem výstupu nezměněného modelu; posun vstupů −1/3, při L16 KL 12.3 → 10.2 (stále kolaps); při ASVD r128/r256 KL 1.7–2× nižší (10/10 epizod).
+- [Sonda rozpočtu skupiny](2026-11-19-budget-probe.md) — nezávislé ASVD rank 32–512 na 48 vrstvách: použitelnost až při 31–63 % bajtů; sekvenční ASVD r256 KL 0.37 → 0.22, r128 2.69 → 1.32; opravená chyba sdílené cache ASVD v `m4_lite`.

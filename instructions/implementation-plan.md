@@ -353,3 +353,19 @@ Navrženo (k rozhodnutí):
 - větší rozpočty nebo menší skupiny;
 - doladění na KL výstupu;
 - skupinový test SigLIP.
+
+## 15. Aktualizace — 19. 11. 2026: sekvenční kalibrace, sonda rozpočtu, plán tandemu
+
+- **Sekvenční kalibrace** (`quic_wc/pilot/sequential.py`), audit
+  [audit/2026-11-19-sequential-calibration.md](../audit/2026-11-19-sequential-calibration.md):
+  - Posun vstupů klesá zhruba o třetinu a fc2 kompenzuje předchozí chyby.
+  - Při L16 ale skupina zůstává v kolapsu (KL 10.2 proti 12.3).
+  - V režimu blízko použitelnosti (ASVD, stejný rank) snižuje KL 1.7× (r256: 0.37 → 0.22) a 2.0× (r128:
+    2.69 → 1.32), v 10/10 validačních epizodách. Je to tedy zlepšení v násobcích, ne o řády. Sekvenční kalibrace
+    je výchozí bod (varianta 0) pro doladění.
+- **Sonda rozpočtu** (nezávislé ASVD, celá skupina), audit
+  [audit/2026-11-19-budget-probe.md](../audit/2026-11-19-budget-probe.md):
+  - Použitelnost vyžaduje průměrnou relL2 vrstvy ~0.1–0.2.
+  - Nezávislé ASVD k tomu potřebuje 31–63 % bajtů: rank 256 → KL 0.37, rank 512 → KL 0.023.
+- **Plán tandemu a doladění** na výstup modelu (varianty a, b, c a kontrola b+):
+  [tandem-recovery-plan.md](tandem-recovery-plan.md). Neprovedeno.

@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from torch import nn
 
-from quic_wc.pilot.m4_lite import InSitu, Swap, dataset_tokens
+from quic_wc.pilot.m4_lite import InSitu, Swap, asvd_key, dataset_tokens
 
 
 def test_dataset_tokens_match_action_tokenizer_rule():
@@ -28,10 +28,25 @@ def test_swap_replaces_and_restores_weights():
     model = nn.Sequential(nn.Linear(4, 3))
     original_w, original_b = model[0].weight.detach().clone(), model[0].bias.detach().clone()
     rep = {"weight": torch.zeros(3, 4), "bias": torch.full((3,), 2.0)}
-    replacements = [{"layer": "0", "kind": "asvd", "rank": 1, "policy": "corrected"}]
+    replacements = [{"layer": "0", "kind": "asvd", "rank": 1, "policy": "corrected", "calibration": "cal/a"}]
     x = torch.randn(5, 4)
-    with Swap(model, replacements, {("0", 1, "corrected"): rep}) as swap:
+    with Swap(model, replacements, {("cal/a", 1, "corrected"): rep}) as swap:
         swap.monitors["0"].active = True
         assert torch.allclose(model(x), torch.full((5, 3), 2.0))
         assert swap.monitors["0"].value() > 0
     assert torch.equal(model[0].weight, original_w) and torch.equal(model[0].bias, original_b)
+
+
+def test_asvd_cache_separates_calibrations_of_the_same_layer():
+    """Regression (2026-11-19): independent and sequential ASVD of one layer at one rank shared a cache entry."""
+    model = nn.Sequential(nn.Linear(4, 3))
+    base = {"layer": "0", "kind": "asvd", "rank": 2, "policy": "corrected"}
+    a, b = dict(base, calibration="indep/l0"), dict(base, calibration="seq/l0")
+    assert asvd_key(a) != asvd_key(b)
+    cache = {asvd_key(a): {"weight": torch.zeros(3, 4)}, asvd_key(b): {"weight": torch.ones(3, 4)}}
+    x = torch.ones(1, 4)
+    outs = []
+    for r in (a, b):
+        with Swap(model, [r], cache):
+            outs.append(model(x) - model[0].bias)
+    assert torch.allclose(outs[0], torch.zeros(1, 3)) and torch.allclose(outs[1], torch.full((1, 3), 4.0))

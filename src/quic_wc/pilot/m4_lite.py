@@ -132,27 +132,36 @@ def group_plan(args: argparse.Namespace) -> None:
 # ----------------------------------------------------------------------------------------------------------
 # replacements
 # ----------------------------------------------------------------------------------------------------------
+def asvd_key(r: dict[str, Any]) -> tuple[str, int, str]:
+    """Cache key of an ASVD replacement. It includes the calibration: two variants may replace the same layer
+    with the same rank from different calibrations (independent vs sequential)."""
+    return (str(r["calibration"]), int(r["rank"]), r["policy"])
+
+
 def asvd_weights(variants: list[dict[str, Any]], device: str) -> dict[tuple[str, int, str], dict[str, torch.Tensor]]:
-    """Deployable BF16 ASVD weights (and corrected biases) computed before the model occupies the GPU."""
+    """Deployable BF16 ASVD weights (and corrected biases) computed before the model occupies the GPU, keyed by
+    ``asvd_key``."""
     from .run import Context, bf16, svd_weight
 
     wanted: dict[str, set[tuple[int, str]]] = {}
     for v in variants:
         for r in v["replacements"]:
             if r["kind"] == "asvd":
-                wanted.setdefault(r["calibration"], set()).add((r["rank"], r["policy"]))
+                wanted.setdefault(str(r["calibration"]), set()).add((int(r["rank"]), r["policy"], r["layer"]))
     out = {}
     for cal, items in wanted.items():
         ctx = Context(Path(cal), device)
         layer = ctx.manifest["layer"]["name"]
-        for rank, policy in sorted(items):
+        for rank, policy, wanted_layer in sorted(items):
+            if wanted_layer != layer:
+                raise ValueError(f"{cal} calibrates {layer}, plan replaces {wanted_layer}")
             w = bf16(svd_weight(ctx.asvd(ctx.weight, policy), rank))
             entry = {"weight": w.to(torch.bfloat16).cpu()}
             b_hat = ctx.bias_hat(w, ctx.weight, policy)
             if b_hat is not None:
                 entry["bias"] = b_hat.to(torch.bfloat16).cpu()
             entry["check_rel_l2"] = torch.tensor(ctx.evaluate(w, ctx.weight, policy)[METRIC])
-            out[(layer, rank, policy)] = entry
+            out[(cal, rank, policy)] = entry
         del ctx
         torch.cuda.empty_cache()
     return out
@@ -210,7 +219,7 @@ class Swap:
             else:
                 monitor.weight = original.weight.detach().clone()  # the in-place copy below overwrites it
                 monitor.bias = None if original.bias is None else original.bias.detach().clone()
-                rep = self.asvd[(name, r["rank"], r["policy"])]
+                rep = self.asvd[asvd_key(r)]
                 original.weight.data.copy_(rep["weight"].to(original.weight.device))
                 if "bias" in rep:
                     original.bias.data.copy_(rep["bias"].to(original.bias.device))
@@ -416,7 +425,7 @@ def run(args: argparse.Namespace) -> None:
             metrics["tf_top1_agree_ref"] = float((data["tf_argmax"] == data["tokens"]).float().mean())
         for r in v["replacements"]:
             if r["kind"] == "asvd":
-                r["check_rel_l2"] = float(asvd[(r["layer"], r["rank"], r["policy"])]["check_rel_l2"])
+                r["check_rel_l2"] = float(asvd[asvd_key(r)]["check_rel_l2"])
         save_file({k: data[k] for k in ("tokens", "tf_argmax", "tf_kl") if data.get(k) is not None},
                   str(args.out / "tokens" / f"{v['name'].replace(':', '__')}.safetensors"))
         results["variants"].append({"name": v["name"], "replacements": v["replacements"], "metrics": metrics})
@@ -430,6 +439,11 @@ def run(args: argparse.Namespace) -> None:
     (args.out / "results.partial.json").unlink(missing_ok=True)
     (args.out / "results.md").write_text(markdown(results), encoding="utf-8")
     print(markdown(results))
+
+
+def pilot_error(rep: dict[str, Any]) -> float:
+    """Pilot relL2 of a replacement; hand-written ASVD plans have only the recomputed ``check_rel_l2``."""
+    return rep.get("pilot_rel_l2", rep.get("check_rel_l2", float("nan")))
 
 
 def markdown(results: dict[str, Any]) -> str:
@@ -449,11 +463,11 @@ def markdown(results: dict[str, Any]) -> str:
         if len(reps) > 4:  # groups: mean over layers (and max of the in-situ error)
             ins = list(m["in_situ_rel_l2"].values())
             ratio = f"{len(reps)} vrstev, ⌀ {np.mean([r['byte_ratio'] for r in reps]):.4f}"
-            pilot = f"⌀ {np.mean([r['pilot_rel_l2'] for r in reps]):.4f}"
+            pilot = f"⌀ {np.mean([pilot_error(r) for r in reps]):.4f}"
             insitu = f"⌀ {np.mean(ins):.4f}, max {np.max(ins):.4f}"
         else:
             ratio = "; ".join(f"{r['byte_ratio']:.4f}" for r in reps) or "1"
-            pilot = "; ".join(f"{r['pilot_rel_l2']:.4f}" for r in reps) or "—"
+            pilot = "; ".join(f"{pilot_error(r):.4f}" for r in reps) or "—"
             insitu = "; ".join(f"{x:.4f}" for x in m["in_situ_rel_l2"].values()) or "—"
         lines.append(f"| {v['name']} | {ratio} | {pilot} | {insitu} | {f(m.get('tf_top1_agree_ref'))} | "
                      f"{f(m.get('tf_kl_mean'), 5)} | {f(m.get('tf_kl_p95'), 5)} | {f(m.get('free_token_agree_ref'))} | "
